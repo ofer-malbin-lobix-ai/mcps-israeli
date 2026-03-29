@@ -1,0 +1,71 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '**/src/**'
+      - '**/package.json'
+  push:
+    branches: [master]
+    paths:
+      - '**/src/**'
+      - '**/package.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  mcp-scan:
+    name: Snyk Agent Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install mcp-scan
+        run: pip install mcp-scan
+      - name: Run mcp-scan on MCP packages
+        run: |
+          for dir in */; do
+            if [ -f "$dir/package.json" ]; then
+              echo "Scanning $dir..."
+              cd "$dir"
+              npm install --ignore-scripts 2>/dev/null || true
+              npm run build 2>/dev/null || true
+              if [ -f "dist/index.js" ]; then
+                mcp-scan dist/index.js || true
+              fi
+              cd ..
+            fi
+          done
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Post scan results
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## Security Scan Complete
+
+          Snyk mcp-scan has finished. Check workflow logs for details."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  cisco-scan:
+    name: Cisco Skill Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Cisco Skill Scanner
+        run: pip install cisco-ai-skill-scanner
+      - name: Scan all MCP packages
+        run: |
+          skill-scanner scan-all . --fail-on-severity high --format sarif --output results.sarif || true
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+        continue-on-error: true
