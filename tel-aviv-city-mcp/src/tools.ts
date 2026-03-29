@@ -65,6 +65,15 @@ function featureCoords(
   if ("x" in geom && "y" in geom) {
     return { lon: geom.x, lat: geom.y };
   }
+  // Centroid of first ring (polygon) or first path (line)
+  const points =
+    ("rings" in geom ? geom.rings[0] : undefined) ||
+    ("paths" in geom ? geom.paths[0] : undefined);
+  if (points && points.length > 0) {
+    const sumX = points.reduce((s: number, p: number[]) => s + p[0], 0);
+    const sumY = points.reduce((s: number, p: number[]) => s + p[1], 0);
+    return { lon: sumX / points.length, lat: sumY / points.length };
+  }
   return null;
 }
 
@@ -313,7 +322,7 @@ export async function getRoadClosures(
       bbox,
       outFields: ["*"],
       resultRecordCount: 50,
-      returnGeometry: false,
+      returnGeometry: true,
     }),
   ]);
 

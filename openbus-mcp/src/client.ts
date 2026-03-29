@@ -6,10 +6,11 @@ const MIN_INTERVAL_MS = 1000; // 1 request per second
 async function rateLimit(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
-  if (elapsed < MIN_INTERVAL_MS) {
-    await new Promise((resolve) => setTimeout(resolve, MIN_INTERVAL_MS - elapsed));
+  const waitMs = MIN_INTERVAL_MS - elapsed;
+  lastRequestTime = waitMs > 0 ? now + waitMs : now;
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
-  lastRequestTime = Date.now();
 }
 
 export interface ApiError {

@@ -2,7 +2,7 @@
  * MCP tool definitions and handlers for the Israel Hiking Map API.
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   searchPois,

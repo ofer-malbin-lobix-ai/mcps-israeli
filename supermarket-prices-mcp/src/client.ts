@@ -13,18 +13,20 @@
 const REQUEST_INTERVAL_MS = 1500;
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
+const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
 let lastRequestTime = 0;
 
 async function rateLimitedWait(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
-  if (elapsed < REQUEST_INTERVAL_MS) {
+  const waitMs = REQUEST_INTERVAL_MS - elapsed;
+  lastRequestTime = waitMs > 0 ? now + waitMs : now;
+  if (waitMs > 0) {
     await new Promise((resolve) =>
-      setTimeout(resolve, REQUEST_INTERVAL_MS - elapsed)
+      setTimeout(resolve, waitMs)
     );
   }
-  lastRequestTime = Date.now();
 }
 
 export async function fetchWithRateLimit(
@@ -33,12 +35,12 @@ export async function fetchWithRateLimit(
 ): Promise<Response> {
   await rateLimitedWait();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     try {
       if (attempt > 0) {
         await rateLimitedWait();
@@ -87,6 +89,10 @@ export async function fetchText(url: string): Promise<string> {
       `HTTP ${response.status} fetching ${url}: ${response.statusText}`
     );
   }
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response too large (${contentLength} bytes). Maximum is ${MAX_RESPONSE_SIZE} bytes.`);
+  }
   return response.text();
 }
 
@@ -100,6 +106,10 @@ export async function fetchXml(url: string): Promise<string> {
     throw new Error(
       `HTTP ${response.status} fetching XML from ${url}: ${response.statusText}`
     );
+  }
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response too large (${contentLength} bytes). Maximum is ${MAX_RESPONSE_SIZE} bytes.`);
   }
   return response.text();
 }

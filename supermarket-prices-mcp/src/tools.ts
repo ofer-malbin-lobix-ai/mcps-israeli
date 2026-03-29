@@ -8,6 +8,30 @@ import {
 } from "./client.js";
 
 // ---------------------------------------------------------------------------
+// URL validation -- restrict to known Israeli supermarket price domains (SSRF prevention)
+// ---------------------------------------------------------------------------
+
+const ALLOWED_DOMAINS = [
+  'prices.shufersal.co.il',
+  'publishedprices.co.il',
+  'url.retail.publishedprices.co.il',
+  'prices.mega.co.il',
+  'prices.ybitan.co.il',
+  'prices.carrefour.co.il',
+];
+
+function validateUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Only HTTP(S) URLs are allowed, got: ${parsed.protocol}`);
+  }
+  const isAllowed = ALLOWED_DOMAINS.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d));
+  if (!isAllowed) {
+    throw new Error(`URL domain not in allowlist: ${parsed.hostname}. Allowed domains: ${ALLOWED_DOMAINS.join(', ')}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Chain registry -- all chains mandated to publish under the 2014 Food Act
 // ---------------------------------------------------------------------------
 
@@ -749,6 +773,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ xml_url, query, limit }) => {
       try {
+        validateUrl(xml_url);
         const xml = await fetchXml(xml_url);
         const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
 
@@ -901,6 +926,7 @@ export function registerTools(server: McpServer): void {
 
       for (const url of xml_urls) {
         try {
+          validateUrl(url);
           const xml = await fetchXml(url);
           const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
           const chainId =
@@ -1056,6 +1082,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ xml_url, city_filter, limit }) => {
       try {
+        validateUrl(xml_url);
         const xml = await fetchXml(xml_url);
         let stores = extractXmlBlocks(xml, "Store", STORE_FIELDS);
 
@@ -1167,6 +1194,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ xml_url, query, limit }) => {
       try {
+        validateUrl(xml_url);
         const xml = await fetchXml(xml_url);
         let promos = extractXmlBlocks(xml, "Promotion", PROMO_FIELDS);
 
