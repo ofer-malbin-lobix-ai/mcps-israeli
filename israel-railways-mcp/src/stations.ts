@@ -42,7 +42,7 @@ export const STATIONS: Station[] = [
   { id: "4170", nameHe: "פתח תקווה - קריית אריה", nameEn: "Petah Tikva-Kiryat Arye" },
   { id: "4250", nameHe: "פתח תקווה - סגולה", nameEn: "Petah Tikva-Segula" },
   { id: "4600", nameHe: "תל אביב - השלום", nameEn: "Tel Aviv-HaShalom" },
-  { id: "4640", nameHe: "חולון - וולפסון", nameEn: "Holon Junction" },
+  { id: "4640", nameHe: "צומת חולון", nameEn: "Holon Junction" },
   { id: "4660", nameHe: "חולון - וולפסון", nameEn: "Holon-Wolfson" },
   { id: "4680", nameHe: "בת ים - יוספטל", nameEn: "Bat Yam-Yoseftal" },
   { id: "4690", nameHe: "בת ים - קוממיות", nameEn: "Bat Yam-Komemiyut" },

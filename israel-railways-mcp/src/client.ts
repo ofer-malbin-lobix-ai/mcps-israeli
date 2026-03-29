@@ -4,7 +4,9 @@
  */
 
 const API_BASE = "https://rail-api.rail.co.il/rjpa/api/v1";
-const API_KEY = "5e64d66cf03f4547bcac5de2de06b566";
+// Public key from rail.co.il website JavaScript; overridable via env var if rotated
+const API_KEY =
+  process.env.ISRAEL_RAILWAYS_API_KEY ?? "5e64d66cf03f4547bcac5de2de06b566";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
@@ -65,6 +67,7 @@ async function railRequest<T>(
       "User-Agent": USER_AGENT,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {
@@ -98,7 +101,7 @@ interface SearchTrainResponse {
       arrivalTime: string;
       trains: Array<{
         trainNumber: number;
-        orignStation: number;
+        orignStation: number; // sic: typo in Israel Railways API response
         destinationStation: number;
         departureTime: string;
         arrivalTime: string;
@@ -138,9 +141,12 @@ export async function searchRoutes(
   );
 
   const result = data.result;
-  const start = result.startFromIndex;
-  const count = result.numOfResultsToShow;
-  const travels = result.travels.slice(start, start + count);
+  const start = result.startFromIndex ?? 0;
+  const count = result.numOfResultsToShow ?? result.travels.length;
+  const travels =
+    count > 0
+      ? result.travels.slice(start, start + count)
+      : result.travels;
 
   return travels.map((t) => ({
     departureTime: t.departureTime,
@@ -175,28 +181,10 @@ interface GeneralUpdatesResponse {
 }
 
 export async function getServiceUpdates(): Promise<ServiceUpdate[]> {
-  const response = await fetch(
-    `${API_BASE}/timetable/generalMessages`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ocp-apim-subscription-key": API_KEY,
-        "User-Agent": USER_AGENT,
-      },
-      body: JSON.stringify({
-        languageId: "English",
-      }),
-    }
+  const data = await railRequest<GeneralUpdatesResponse>(
+    "timetable/generalMessages",
+    { languageId: "English" }
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Israel Railways API returned status ${response.status} for service updates`
-    );
-  }
-
-  const data = (await response.json()) as GeneralUpdatesResponse;
 
   return (data.result || []).map((u) => ({
     id: String(u.id),

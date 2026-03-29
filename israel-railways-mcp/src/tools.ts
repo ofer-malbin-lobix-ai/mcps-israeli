@@ -65,9 +65,11 @@ export function registerTools(server: McpServer): void {
           ),
         date: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
           .describe("Travel date in YYYY-MM-DD format"),
         hour: z
           .string()
+          .regex(/^\d{2}:\d{2}$/, "Time must be HH:MM")
           .default("08:00")
           .describe("Departure time in HH:MM format (default 08:00)"),
       },

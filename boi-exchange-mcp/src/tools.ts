@@ -78,9 +78,11 @@ export function registerTools(server: McpServer): void {
           .describe("ISO 4217 currency code, e.g. USD, EUR, GBP"),
         startDate: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
           .describe("Start date in YYYY-MM-DD format"),
         endDate: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
           .describe("End date in YYYY-MM-DD format"),
       },
       annotations: TOOL_ANNOTATIONS,
@@ -150,9 +152,11 @@ export function registerTools(server: McpServer): void {
           .describe("ISO 4217 currency code, e.g. USD, EUR, GBP"),
         startDate: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
           .describe("Start date in YYYY-MM-DD format"),
         endDate: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
           .describe("End date in YYYY-MM-DD format"),
       },
       annotations: TOOL_ANNOTATIONS,

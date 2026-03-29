@@ -15,10 +15,10 @@ interface ExchangeRateEntry {
 }
 
 function parseCSV(csv: string): ExchangeRateEntry[] {
-  const lines = csv.trim().split("\n");
+  const lines = csv.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
-  const header = lines[0].split(",");
+  const header = lines[0].split(",").map((h) => h.trim());
   const seriesIdx = header.indexOf("SERIES_CODE");
   const currencyIdx = header.indexOf("BASE_CURRENCY");
   const dateIdx = header.indexOf("TIME_PERIOD");
@@ -33,11 +33,11 @@ function parseCSV(csv: string): ExchangeRateEntry[] {
 
   const entries: ExchangeRateEntry[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",");
+    const cols = lines[i].split(",").map((c) => c.trim());
     if (cols.length <= Math.max(seriesIdx, dateIdx, valueIdx)) continue;
 
     const rate = parseFloat(cols[valueIdx]);
-    if (isNaN(rate)) continue;
+    if (isNaN(rate) || rate === 0) continue;
 
     entries.push({
       seriesCode: cols[seriesIdx],
@@ -91,6 +91,7 @@ async function fetchBOI(url: string): Promise<string> {
 
   const response = await fetch(url, {
     headers: { Accept: "text/csv" },
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {
@@ -166,7 +167,7 @@ export async function getHistoricalRates(
 export async function listAvailableCurrencies(): Promise<string[]> {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 7);
+  start.setDate(start.getDate() - 14);
 
   const url = buildURL({
     startDate: formatDate(start),
