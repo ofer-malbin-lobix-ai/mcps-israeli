@@ -65,8 +65,62 @@ jobs:
         run: |
           skill-scanner scan-all . --fail-on-severity high --format sarif --output results.sarif || true
       - name: Upload SARIF results
-        if: always()
+        if: always() && hashFiles('results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
         continue-on-error: true
+
+  tank-scan:
+    name: Tank Security Scanner
+    runs-on: ubuntu-latest
+    if: ${{ vars.TANK_LAMBDA_FUNCTION != '' || secrets.AWS_ACCESS_KEY_ID != '' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
+      - name: Run Tank scanner on each MCP
+        run: |
+          LAMBDA="${{ vars.TANK_LAMBDA_FUNCTION || 'tank-scanner' }}"
+          echo "Using Lambda: $LAMBDA"
+          FAILED=0
+          for dir in */; do
+            if [ -f "$dir/package.json" ]; then
+              MCP_NAME="${dir%/}"
+              echo ""
+              echo "=== Scanning $MCP_NAME ==="
+              PAYLOAD=$(cat <<EOFPAYLOAD
+          {"tarball_url":"https://api.github.com/repos/skills-il/mcps/tarball/master","version_id":"ci-$(date +%s)","manifest":{},"permissions":{},"sub_path":"$MCP_NAME"}
+          EOFPAYLOAD
+              )
+              RESULT=$(aws lambda invoke \
+                --function-name "$LAMBDA" \
+                --payload "$(echo "$PAYLOAD" | base64)" \
+                --cli-binary-format raw-in-base64-out \
+                /tmp/tank-result-${MCP_NAME}.json 2>&1) || true
+
+              if [ -f "/tmp/tank-result-${MCP_NAME}.json" ]; then
+                echo "Tank result for $MCP_NAME:"
+                cat "/tmp/tank-result-${MCP_NAME}.json" | python3 -m json.tool 2>/dev/null || cat "/tmp/tank-result-${MCP_NAME}.json"
+                # Check for critical findings
+                VERDICT=$(python3 -c "import json; d=json.load(open('/tmp/tank-result-${MCP_NAME}.json')); print(d.get('verdict','unknown'))" 2>/dev/null || echo "unknown")
+                if [ "$VERDICT" = "fail" ]; then
+                  echo "::error::Tank scanner FAILED for $MCP_NAME"
+                  FAILED=1
+                fi
+              else
+                echo "::warning::Tank scanner returned no result for $MCP_NAME"
+              fi
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::One or more MCPs failed Tank security scan"
+            exit 1
+          fi
