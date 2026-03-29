@@ -74,7 +74,7 @@ jobs:
   tank-scan:
     name: Tank Security Scanner
     runs-on: ubuntu-latest
-    if: ${{ vars.TANK_LAMBDA_FUNCTION != '' || secrets.AWS_ACCESS_KEY_ID != '' }}
+    if: ${{ vars.TANK_LAMBDA_FUNCTION != '' }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
