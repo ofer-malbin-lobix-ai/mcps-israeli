@@ -1,0 +1,33 @@
+{
+  "name": "israel-hiking-mcp",
+  "version": "1.0.0",
+  "description": "MCP server wrapping the Israel Hiking Map APIs (israelhiking.osm.org.il) for route planning, POI search, and trail discovery in Israel",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "israel-hiking-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "israel",
+    "hiking",
+    "trails",
+    "openstreetmap",
+    "poi",
+    "routing"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

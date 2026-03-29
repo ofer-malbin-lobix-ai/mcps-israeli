@@ -1,0 +1,30 @@
+{
+  "name": "supermarket-prices-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Israeli supermarket price data from the government-mandated Price Transparency Law",
+  "type": "module",
+  "bin": {
+    "supermarket-prices-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "supermarket",
+    "israel",
+    "prices",
+    "transparency"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
