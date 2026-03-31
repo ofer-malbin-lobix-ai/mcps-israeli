@@ -1,0 +1,22 @@
+{
+  "name": "israel-clinical-trials-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for searching clinical trials at Israeli hospitals and research centers via ClinicalTrials.gov v2 API",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "israel-clinical-trials-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.3"
+  }
+}
