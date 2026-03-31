@@ -11,6 +11,7 @@ Browse all MCPs at [agentskills.co.il/mcp](https://agentskills.co.il/he/mcp).
 | [ben-gurion-flights-mcp](./ben-gurion-flights-mcp) | Real-time Ben Gurion Airport flight arrivals and departures | [data.gov.il flydata](https://data.gov.il/dataset/flydata) | None |
 | [boi-exchange-mcp](./boi-exchange-mcp) | Bank of Israel official exchange rates (sha'ar yatzig) for 30+ currencies | [BOI SDMX API](https://edge.boi.gov.il/) | None |
 | [israel-clinical-trials-mcp](./israel-clinical-trials-mcp) | Clinical trials at Israeli hospitals and research centers | [ClinicalTrials.gov v2 API](https://clinicaltrials.gov/data-api/api) | None |
+| [kolzchut-mcp](./kolzchut-mcp) | Israeli rights and entitlements knowledge base (olim, tax, housing, health, disability) | [Kolzchut MediaWiki API](https://www.kolzchut.org.il/w/api.php) | None |
 | [israel-hiking-mcp](./israel-hiking-mcp) | Israel hiking trails, POI search, route planning, and coordinate conversion | [Israel Hiking Map](https://israelhiking.osm.org.il) | None |
 | [israel-mental-health-mcp](./israel-mental-health-mcp) | Mental health clinics, quality metrics, and psychiatric services across Israel | [data.gov.il MOH](https://data.gov.il/dataset/mentalhealthclinics) | None |
 | [israel-nutrition-mcp](./israel-nutrition-mcp) | Israeli nutrition database (Tzameret) with 4,500+ foods and 74 nutrients | [data.gov.il Tzameret](https://data.gov.il/dataset/nutrition) | None |
@@ -30,6 +31,7 @@ mcps/
   boi-exchange-mcp/          # Bank of Israel exchange rates
   israel-clinical-trials-mcp/ # Clinical trials in Israel
   israel-hiking-mcp/         # Israel hiking trails and route planning
+  kolzchut-mcp/              # Israeli rights and entitlements (Kolzchut)
   israel-mental-health-mcp/  # Mental health clinics and services
   israel-nutrition-mcp/      # Israeli nutrition database (Tzameret)
   israel-railways-mcp/       # Israel Railways schedules
