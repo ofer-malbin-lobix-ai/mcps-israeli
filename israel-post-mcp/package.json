@@ -1,0 +1,23 @@
+{
+  "name": "israel-post-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for tracking packages via Israel Post (דואר ישראל). Uses the undocumented tracking endpoint to retrieve package status history with dates, actions, branches, and cities.",
+  "main": "dist/index.js",
+  "bin": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["mcp", "israel-post", "package-tracking", "doar-israel"],
+  "author": "skills-il",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.3"
+  }
+}
