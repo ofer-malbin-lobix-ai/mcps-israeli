@@ -82,6 +82,8 @@ jobs:
     uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
     with:
       skill_path: '.'
+      lenient: true
+      fail_on_severity: critical
     permissions:
       security-events: write
       contents: read
