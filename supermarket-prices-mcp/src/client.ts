@@ -124,14 +124,23 @@ export function extractXmlElements(
   tagName: string
 ): string[] {
   const results: string[] = [];
-  const regex = new RegExp(
-    `<${tagName}[^>]*>([^<]*)</${tagName}>`,
-    "gi"
-  );
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(xml)) !== null) {
-    results.push(match[1].trim());
+  const lowerXml = xml.toLowerCase();
+  const openTag = `<${tagName.toLowerCase()}`;
+  const closeTag = `</${tagName.toLowerCase()}>`;
+  let pos = 0;
+
+  while (pos < lowerXml.length) {
+    const start = lowerXml.indexOf(openTag, pos);
+    if (start === -1) break;
+    const gtPos = xml.indexOf(">", start);
+    if (gtPos === -1) break;
+    const contentStart = gtPos + 1;
+    const end = lowerXml.indexOf(closeTag, contentStart);
+    if (end === -1) break;
+    results.push(xml.slice(contentStart, end).trim());
+    pos = end + closeTag.length;
   }
+
   return results;
 }
 
@@ -144,24 +153,27 @@ export function extractXmlBlocks(
   fields: string[]
 ): Record<string, string>[] {
   const results: Record<string, string>[] = [];
-  const blockRegex = new RegExp(
-    `<${blockTag}[^>]*>([\\s\\S]*?)</${blockTag}>`,
-    "gi"
-  );
-  let blockMatch: RegExpExecArray | null;
+  const lowerXml = xml.toLowerCase();
+  const openTag = `<${blockTag.toLowerCase()}`;
+  const closeTag = `</${blockTag.toLowerCase()}>`;
+  let pos = 0;
 
-  while ((blockMatch = blockRegex.exec(xml)) !== null) {
-    const blockContent = blockMatch[1];
+  while (pos < lowerXml.length) {
+    const start = lowerXml.indexOf(openTag, pos);
+    if (start === -1) break;
+    const gtPos = xml.indexOf(">", start);
+    if (gtPos === -1) break;
+    const contentStart = gtPos + 1;
+    const end = lowerXml.indexOf(closeTag, contentStart);
+    if (end === -1) break;
+    const blockContent = xml.slice(contentStart, end);
+    pos = end + closeTag.length;
+
     const record: Record<string, string> = {};
-
     for (const field of fields) {
-      const fieldRegex = new RegExp(
-        `<${field}[^>]*>([^<]*)</${field}>`,
-        "i"
-      );
-      const fieldMatch = fieldRegex.exec(blockContent);
-      if (fieldMatch) {
-        record[field] = fieldMatch[1].trim();
+      const vals = extractXmlElements(blockContent, field);
+      if (vals.length > 0) {
+        record[field] = vals[0];
       }
     }
 
@@ -171,4 +183,44 @@ export function extractXmlBlocks(
   }
 
   return results;
+}
+
+/**
+ * Extract blocks between matching open/close HTML/XML tags using string search.
+ * Returns the full inner content of each block (including nested tags).
+ */
+export function extractHtmlBlocks(html: string, tagName: string): string[] {
+  const results: string[] = [];
+  const lowerHtml = html.toLowerCase();
+  const openTag = `<${tagName.toLowerCase()}`;
+  const closeTag = `</${tagName.toLowerCase()}>`;
+  let pos = 0;
+
+  while (pos < lowerHtml.length) {
+    const start = lowerHtml.indexOf(openTag, pos);
+    if (start === -1) break;
+    const gtPos = html.indexOf(">", start);
+    if (gtPos === -1) break;
+    const contentStart = gtPos + 1;
+    const end = lowerHtml.indexOf(closeTag, contentStart);
+    if (end === -1) break;
+    results.push(html.slice(start, end + closeTag.length));
+    pos = end + closeTag.length;
+  }
+
+  return results;
+}
+
+/**
+ * Strip all HTML/XML tags from a string using a char-walker (no regex).
+ */
+export function stripTags(html: string): string {
+  let result = "";
+  let inTag = false;
+  for (let i = 0; i < html.length; i++) {
+    if (html[i] === "<") inTag = true;
+    else if (html[i] === ">") inTag = false;
+    else if (!inTag) result += html[i];
+  }
+  return result;
 }

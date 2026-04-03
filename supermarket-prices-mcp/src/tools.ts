@@ -5,6 +5,8 @@ import {
   fetchXml,
   extractXmlBlocks,
   extractXmlElements,
+  extractHtmlBlocks,
+  stripTags,
 } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -423,25 +425,14 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
   }
 
   // Also parse table rows which contain file info
-  const rowRegex =
-    /<tr[^>]*>[\s\S]*?<\/tr>/gi;
-  const rows = html.match(rowRegex) ?? [];
+  const rows = extractHtmlBlocks(html, "tr");
 
   for (const row of rows) {
     const linkMatch = row.match(/href="([^"]*FileObject\/UpdateCategory[^"]*)"/i);
     if (!linkMatch) continue;
 
-    const cellTexts = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) ?? [];
-    const texts = cellTexts.map((c) => {
-      let result = "";
-      let inTag = false;
-      for (let i = 0; i < c.length; i++) {
-        if (c[i] === "<") inTag = true;
-        else if (c[i] === ">") inTag = false;
-        else if (!inTag) result += c[i];
-      }
-      return result.trim();
-    });
+    const cells = extractHtmlBlocks(row, "td");
+    const texts = cells.map((c) => stripTags(c).trim());
 
     if (texts.length >= 2) {
       let fileUrl = linkMatch[1];
@@ -1206,18 +1197,13 @@ export function registerTools(server: McpServer): void {
         let promos = extractXmlBlocks(xml, "Promotion", PROMO_FIELDS);
 
         // Also extract item codes within each promotion block
-        const promoBlocks =
-          xml.match(
-            /<Promotion[^>]*>[\s\S]*?<\/Promotion>/gi
-          ) ?? [];
+        const promoBlocks = extractHtmlBlocks(xml, "Promotion");
 
         const promoItemMap: Record<string, string[]> = {};
         for (const block of promoBlocks) {
-          const idMatch = block.match(
-            /<PromotionId[^>]*>([^<]*)<\/PromotionId>/i
-          );
-          if (!idMatch) continue;
-          const promoId = idMatch[1].trim();
+          const promoIds = extractXmlElements(block, "PromotionId");
+          if (promoIds.length === 0) continue;
+          const promoId = promoIds[0].trim();
           const itemCodes = extractXmlElements(block, "ItemCode");
           if (itemCodes.length > 0) {
             promoItemMap[promoId] = itemCodes;
