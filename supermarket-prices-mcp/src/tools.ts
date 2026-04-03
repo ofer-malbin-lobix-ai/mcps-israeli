@@ -432,9 +432,12 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
     if (!linkMatch) continue;
 
     const cellTexts = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) ?? [];
-    const texts = cellTexts.map((c) =>
-      c.replace(/<[^>]+>/g, "").trim()
-    );
+    const texts = cellTexts.map((c) => {
+      let t = c;
+      let prev: string;
+      do { prev = t; t = t.replace(/<[^>]+>/g, ""); } while (t !== prev);
+      return t.trim();
+    });
 
     if (texts.length >= 2) {
       let fileUrl = linkMatch[1];

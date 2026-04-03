@@ -168,7 +168,7 @@ export async function searchRights(
   const results = data.query.search.map((r) => ({
     title: r.title,
     pageid: r.pageid,
-    snippet: r.snippet.replace(/<[^>]+>/g, ""),
+    snippet: stripHtml(r.snippet),
     size: r.size,
     wordcount: r.wordcount,
     timestamp: r.timestamp,
@@ -340,17 +340,38 @@ export async function listCategories(
   };
 }
 
+const HTML_ENTITY_MAP: Record<string, string> = {
+  "&nbsp;": " ",
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#039;": "'",
+  "&#39;": "'",
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(
+    /&(?:nbsp|amp|lt|gt|quot|#0?39);/gi,
+    (match) => HTML_ENTITY_MAP[match.toLowerCase()] ?? match,
+  );
+}
+
 function stripHtml(html: string): string {
-  return html
+  // Remove style/script blocks first
+  let text = html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+
+  // Strip tags iteratively until stable (handles nested tags like <a<b>>)
+  let prev: string;
+  do {
+    prev = text;
+    text = text.replace(/<[^>]+>/g, "");
+  } while (text !== prev);
+
+  // Decode entities once after all HTML is removed (avoids double-escaping)
+  text = decodeHtmlEntities(text);
+
+  return text.replace(/\n{3,}/g, "\n\n").trim();
 }
