@@ -363,15 +363,21 @@ function stripHtml(html: string): string {
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
 
-  // Strip tags iteratively until stable (handles nested tags like <a<b>>)
-  let prev: string;
-  do {
-    prev = text;
-    text = text.replace(/<[^>]+>/g, "");
-  } while (text !== prev);
+  // Walk characters to strip all tags (avoids regex-based HTML filtering)
+  let result = "";
+  let inTag = false;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") {
+      inTag = true;
+    } else if (text[i] === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      result += text[i];
+    }
+  }
 
   // Decode entities once after all HTML is removed (avoids double-escaping)
-  text = decodeHtmlEntities(text);
+  result = decodeHtmlEntities(result);
 
-  return text.replace(/\n{3,}/g, "\n\n").trim();
+  return result.replace(/\n{3,}/g, "\n\n").trim();
 }

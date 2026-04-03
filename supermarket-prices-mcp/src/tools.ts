@@ -433,10 +433,14 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
 
     const cellTexts = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) ?? [];
     const texts = cellTexts.map((c) => {
-      let t = c;
-      let prev: string;
-      do { prev = t; t = t.replace(/<[^>]+>/g, ""); } while (t !== prev);
-      return t.trim();
+      let result = "";
+      let inTag = false;
+      for (let i = 0; i < c.length; i++) {
+        if (c[i] === "<") inTag = true;
+        else if (c[i] === ">") inTag = false;
+        else if (!inTag) result += c[i];
+      }
+      return result.trim();
     });
 
     if (texts.length >= 2) {
