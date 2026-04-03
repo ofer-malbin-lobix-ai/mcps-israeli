@@ -1,11 +1,8 @@
 # CI workflow for skills-il MCP server repos.
-# Copy this file to .github/workflows/ci.yml in each MCP repo.
 #
-# Produces check runs that the skills-il scan pipeline reads:
-#   - "Cisco MCP Scanner" (static + behavioral analysis)
-#   - "Snyk Agent Scan"   (LLM-based prompt injection / exfil detection)
-#
-# Requires org-level secrets: SNYK_TOKEN
+# Security scanners (Snyk Agent Scan, Cisco MCP Scanner) are installed
+# as GitHub Apps at the org level -- they produce check runs automatically
+# on push/PR events. This workflow handles lint and build only.
 
 name: CI
 on:
@@ -71,34 +68,3 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ]; then pip install .; fi
-
-  # -----------------------------------------------------------------------
-  # Cisco MCP Scanner
-  # Static and behavioral analysis of MCP server content and tools.
-  # The check run name MUST be "Cisco MCP Scanner" -- the skills-il
-  # scan pipeline matches on this exact name.
-  # -----------------------------------------------------------------------
-  cisco-mcp-scanner:
-    name: Cisco MCP Scanner
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cisco/mcp-scanner-action@v1
-        with:
-          scan-path: '.'
-
-  # -----------------------------------------------------------------------
-  # Snyk Agent Scan
-  # LLM-based scan for prompt injection, data exfiltration, credential
-  # theft, and obfuscated payloads.
-  # -----------------------------------------------------------------------
-  snyk-agent-scan:
-    name: Snyk Agent Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: snyk/actions/agent-scan@v1
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --all-projects
