@@ -1,0 +1,35 @@
+{
+  "name": "israel-elections-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Israeli Knesset election results from data.gov.il",
+  "type": "module",
+  "bin": {
+    "israel-elections-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "israel",
+    "elections",
+    "knesset",
+    "voting",
+    "data-gov-il"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}
