@@ -85,7 +85,7 @@ jobs:
       - name: Install Cisco MCP Scanner
         run: pip install cisco-ai-mcp-scanner
       - name: Run behavioral scan
-        run: mcp-scanner --analyzers yara --format summary behavioral --source-path .
+        run: mcp-scanner --analyzers yara --source-path . --format summary behavioral
 
   # -----------------------------------------------------------------------
   # Snyk Agent Scan
