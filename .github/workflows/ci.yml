@@ -1,8 +1,8 @@
 # CI workflow for skills-il MCP server repos.
 #
-# Security scanners (Snyk Agent Scan, Cisco MCP Scanner) are installed
-# as GitHub Apps at the org level -- they produce check runs automatically
-# on push/PR events. This workflow handles lint and build only.
+# Produces check runs that the skills-il scan pipeline reads:
+#   - "Cisco MCP Scanner"  (supply-chain behavioral analysis via cisco-ai-mcp-scanner)
+#   - "Snyk Agent Scan"    (LLM-based prompt injection / exfil detection)
 
 name: CI
 on:
@@ -68,3 +68,39 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ]; then pip install .; fi
+
+  # -----------------------------------------------------------------------
+  # Cisco MCP Scanner
+  # Supply-chain behavioral analysis of MCP server source code.
+  # Uses the 'supplychain' subcommand with YARA rules engine.
+  # -----------------------------------------------------------------------
+  cisco-mcp-scanner:
+    name: Cisco MCP Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Cisco MCP Scanner
+        run: pip install cisco-ai-mcp-scanner
+      - name: Run supply-chain scan
+        run: mcp-scanner --analyzers yara --format summary supplychain .
+
+  # -----------------------------------------------------------------------
+  # Snyk Agent Scan
+  # LLM-based scan for prompt injection, data exfiltration, credential
+  # theft, and obfuscated payloads.
+  # Requires SNYK_TOKEN org secret from https://app.snyk.io/account
+  # -----------------------------------------------------------------------
+  snyk-agent-scan:
+    name: Snyk Agent Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Snyk Agent Scan
+        run: pipx install snyk-agent-scan
+      - name: Run agent scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk-agent-scan --json .
