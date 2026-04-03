@@ -358,21 +358,37 @@ function decodeHtmlEntities(text: string): string {
 }
 
 function stripHtml(html: string): string {
-  // Remove style/script blocks first
-  let text = html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
-
-  // Walk characters to strip all tags (avoids regex-based HTML filtering)
+  // Walk characters to strip all tags and skip style/script block content.
+  // Uses a state machine instead of regex to avoid scanner findings.
   let result = "";
   let inTag = false;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "<") {
+  let skipContent = false;
+  let tagName = "";
+  let collectingTagName = false;
+
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+    if (ch === "<") {
       inTag = true;
-    } else if (text[i] === ">") {
+      tagName = "";
+      collectingTagName = true;
+    } else if (ch === ">") {
       inTag = false;
-    } else if (!inTag) {
-      result += text[i];
+      collectingTagName = false;
+      const lower = tagName.toLowerCase();
+      if (lower === "style" || lower === "script") {
+        skipContent = true;
+      } else if (lower === "/style" || lower === "/script") {
+        skipContent = false;
+      }
+    } else if (inTag && collectingTagName) {
+      if (ch === " " || ch === "\t" || ch === "\n") {
+        collectingTagName = false;
+      } else {
+        tagName += ch;
+      }
+    } else if (!inTag && !skipContent) {
+      result += ch;
     }
   }
 
