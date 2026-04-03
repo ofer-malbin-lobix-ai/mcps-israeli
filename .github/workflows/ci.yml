@@ -71,8 +71,8 @@ jobs:
 
   # -----------------------------------------------------------------------
   # Cisco MCP Scanner
-  # Supply-chain behavioral analysis of MCP server source code.
-  # Uses the 'supplychain' subcommand with YARA rules engine.
+  # YARA-based behavioral analysis of MCP server source code.
+  # Runs offline with no API keys required.
   # -----------------------------------------------------------------------
   cisco-mcp-scanner:
     name: Cisco MCP Scanner
@@ -84,8 +84,8 @@ jobs:
           python-version: '3.13'
       - name: Install Cisco MCP Scanner
         run: pip install cisco-ai-mcp-scanner
-      - name: Run behavioral scan
-        run: mcp-scanner --analyzers yara behavioral . --format summary
+      - name: Run YARA scan
+        run: mcp-scanner --analyzer-filter yara_analyzer behavioral . --format summary
 
   # -----------------------------------------------------------------------
   # Snyk Agent Scan
