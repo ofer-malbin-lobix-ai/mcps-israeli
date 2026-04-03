@@ -71,21 +71,17 @@ jobs:
 
   # -----------------------------------------------------------------------
   # Cisco MCP Scanner
-  # YARA-based behavioral analysis of MCP server source code.
-  # Runs offline with no API keys required.
+  # Static + YARA analysis via Cisco AI Defense reusable workflow.
+  # Free, no API keys required. Results appear as Code Scanning alerts.
   # -----------------------------------------------------------------------
   cisco-mcp-scanner:
     name: Cisco MCP Scanner
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Install Cisco MCP Scanner
-        run: pip install cisco-ai-mcp-scanner
-      - name: Run YARA scan
-        run: mcp-scanner --analyzer-filter yara_analyzer behavioral . --format summary
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: '.'
+    permissions:
+      security-events: write
+      contents: read
 
   # -----------------------------------------------------------------------
   # Snyk Agent Scan
