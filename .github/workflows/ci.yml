@@ -78,7 +78,8 @@ jobs:
   # The check run name MUST be "Cisco MCP Scanner" -- the skills-il
   # scan pipeline matches on this exact name.
   # -----------------------------------------------------------------------
-  Cisco MCP Scanner:
+  cisco-mcp-scanner:
+    name: Cisco MCP Scanner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +92,8 @@ jobs:
   # LLM-based scan for prompt injection, data exfiltration, credential
   # theft, and obfuscated payloads.
   # -----------------------------------------------------------------------
-  Snyk Agent Scan:
+  snyk-agent-scan:
+    name: Snyk Agent Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
