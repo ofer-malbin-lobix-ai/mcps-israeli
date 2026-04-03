@@ -84,8 +84,8 @@ jobs:
           python-version: '3.13'
       - name: Install Cisco MCP Scanner
         run: pip install cisco-ai-mcp-scanner
-      - name: Run supply-chain scan
-        run: mcp-scanner --analyzers yara --format summary supplychain .
+      - name: Run behavioral scan
+        run: mcp-scanner --analyzers yara --format summary behavioral --source-path .
 
   # -----------------------------------------------------------------------
   # Snyk Agent Scan
@@ -103,4 +103,9 @@ jobs:
       - name: Run agent scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk-agent-scan --json .
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "::warning::SNYK_TOKEN not set, skipping scan"
+            exit 0
+          fi
+          snyk-agent-scan --json .
