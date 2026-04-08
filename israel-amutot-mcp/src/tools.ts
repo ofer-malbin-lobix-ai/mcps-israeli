@@ -412,12 +412,14 @@ export async function getAmutaDonationSummary(
     if (r[DONATION_FIELDS.year]) years.add(Number(r[DONATION_FIELDS.year]));
   }
 
+  const isTruncated = result.result.total > result.result.records.length;
   return JSON.stringify({
     total_donations: result.result.total,
     total_amount_ils: totalILS,
     unique_donors: donors.size,
     years_covered: [...years].sort((a, b) => b - a),
     showing: records.length,
+    ...(isTruncated && { warning: `Only ${records.length} of ${result.result.total} donations fetched; totals are partial` }),
     donations: records,
   }, null, 2);
 }
@@ -428,8 +430,9 @@ export async function getAmutaDonationSummary(
 
 export const checkManagementCertificateSchema = z.object({
   registration_number: z
-    .string()
-    .describe("Amuta registration number as string (e.g. '580007858')"),
+    .number()
+    .int()
+    .describe("Amuta registration number (starts with 58)"),
   year: z
     .number()
     .int()
@@ -440,8 +443,10 @@ export const checkManagementCertificateSchema = z.object({
 export async function checkManagementCertificate(
   args: z.infer<typeof checkManagementCertificateSchema>
 ): Promise<string> {
+  // Certificate resource stores registration number as text
+  const regStr = String(args.registration_number);
   const filters: Record<string, string | number> = {
-    [CERT_FIELDS.regNumber]: args.registration_number,
+    [CERT_FIELDS.regNumber]: regStr,
   };
   if (args.year) {
     filters[CERT_FIELDS.year] = args.year;
@@ -455,7 +460,7 @@ export async function checkManagementCertificate(
   });
 
   if (result.result.records.length === 0) {
-    return `No management certificate records found for ${args.registration_number}${args.year ? ` in ${args.year}` : ""}`;
+    return `No management certificate records found for ${regStr}${args.year ? ` in ${args.year}` : ""}`;
   }
 
   const records = result.result.records.map(formatRecord);

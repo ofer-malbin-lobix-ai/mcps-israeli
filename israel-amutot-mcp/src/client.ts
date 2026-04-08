@@ -39,10 +39,11 @@ interface DatastoreSearchResult {
 async function throttle(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
-  if (elapsed < THROTTLE_MS) {
-    await new Promise((resolve) => setTimeout(resolve, THROTTLE_MS - elapsed));
+  const wait = THROTTLE_MS - elapsed;
+  lastRequestTime = now + (wait > 0 ? wait : 0);
+  if (wait > 0) {
+    await new Promise((resolve) => setTimeout(resolve, wait));
   }
-  lastRequestTime = Date.now();
 }
 
 export async function datastoreSearch(
