@@ -1,5 +1,16 @@
 const BASE_URL = "https://data.gov.il/api/3/action";
-const RESOURCE_ID = "be5b7935-3922-45d4-9638-08871b17ec95";
+
+// Resource IDs from the moj-amutot dataset on data.gov.il
+export const RESOURCES = {
+  /** Registered amutot (74,880+ records) */
+  amutot: "be5b7935-3922-45d4-9638-08871b17ec95",
+  /** Foreign political entity donations (13,300+ records) */
+  foreignDonations: "35cb40b5-3f13-4bca-9ce2-488085913107",
+  /** Proper management certificate history (324,500+ records) */
+  managementCertificate: "cb12ac14-7429-4268-bc03-460f48157858",
+  /** Public benefit companies / חל"צ (1,500 records) */
+  publicBenefitCompanies: "85e40960-5426-4f4c-874f-2d1ec1b94609",
+} as const;
 
 const TIMEOUT_MS = 30_000;
 const THROTTLE_MS = 200;
@@ -7,6 +18,7 @@ const THROTTLE_MS = 200;
 let lastRequestTime = 0;
 
 interface DatastoreSearchParams {
+  resourceId: string;
   q?: string;
   filters?: Record<string, string | number>;
   limit?: number;
@@ -39,7 +51,7 @@ export async function datastoreSearch(
   await throttle();
 
   const url = new URL(`${BASE_URL}/datastore_search`);
-  url.searchParams.set("resource_id", RESOURCE_ID);
+  url.searchParams.set("resource_id", params.resourceId);
 
   if (params.q) {
     url.searchParams.set("q", params.q);

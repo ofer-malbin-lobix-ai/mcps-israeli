@@ -1,7 +1,7 @@
 {
   "name": "israel-amutot-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for querying the Israeli Non-Profit Organization (Amutot) Registry from data.gov.il",
+  "version": "2.0.0",
+  "description": "MCP server for Israeli non-profit registry data: amutot, public benefit companies, foreign donations, and management certificates from data.gov.il",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
