@@ -173,7 +173,7 @@ export async function findByTherapy(
   });
 
   if (filtered.length === 0) {
-    return formatClinicList(data.result.records, data.result.total, true);
+    return "No clinics found offering the specified therapy. Try broadening your search.";
   }
 
   return formatClinicList(filtered, filtered.length, true);
@@ -209,7 +209,7 @@ export async function findBySpecialization(
   });
 
   if (filtered.length === 0) {
-    return formatClinicList(data.result.records, data.result.total, true);
+    return "No clinics found offering the specified specialization. Try broadening your search.";
   }
 
   return formatClinicList(filtered, filtered.length, true);

@@ -391,12 +391,6 @@ interface ShufersalFileEntry {
 function parseShufersalFileList(html: string): ShufersalFileEntry[] {
   const entries: ShufersalFileEntry[] = [];
 
-  // Shufersal uses a table with links to gz/xml files
-  const linkRegex =
-    /href="(\/FileObject\/UpdateCategory[^"]*|[^"]*\.(?:gz|xml)[^"]*)"/gi;
-  const downloadRegex =
-    /href="([^"]*(?:download|FileObject\/UpdateCategory)[^"]*)"/gi;
-
   // Look for direct file download links
   const fileLinks =
     html.match(

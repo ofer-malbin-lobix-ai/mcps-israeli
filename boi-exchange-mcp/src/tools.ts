@@ -88,6 +88,9 @@ export function registerTools(server: McpServer): void {
       annotations: TOOL_ANNOTATIONS,
     },
     async ({ currency, startDate, endDate }) => {
+      if (startDate > endDate) {
+        return { content: [{ type: "text" as const, text: "Error: startDate must be before or equal to endDate" }] };
+      }
       try {
         const entries = await getHistoricalRates(currency, startDate, endDate);
         const output = {
@@ -162,6 +165,9 @@ export function registerTools(server: McpServer): void {
       annotations: TOOL_ANNOTATIONS,
     },
     async ({ currency, startDate, endDate }) => {
+      if (startDate > endDate) {
+        return { content: [{ type: "text" as const, text: "Error: startDate must be before or equal to endDate" }] };
+      }
       try {
         const entries = await getHistoricalRates(currency, startDate, endDate);
         const first = entries[0];

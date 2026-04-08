@@ -461,9 +461,11 @@ export function registerTools(server: McpServer): void {
         ];
 
         for (const h of highlights) {
-          const values = foods.map((f) => ({
+          const validFoods = foods.filter(f => f[h.key] != null);
+          if (validFoods.length === 0) continue;
+          const values = validFoods.map((f) => ({
             name: f.shmmitzrach,
-            val: (f[h.key] as number | null) ?? 0,
+            val: (f[h.key] as number),
           }));
           const sorted = [...values].sort((a, b) => b.val - a.val);
           if (sorted[0].val > 0) {

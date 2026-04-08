@@ -53,9 +53,8 @@ function truncate(text: string): string {
 const SearchVehicleSchema = z
   .object({
     plate_number: z
-      .number()
-      .int()
-      .positive()
+      .coerce.string()
+      .regex(/^\d{5,8}$/, "Plate number must be 5-8 digits")
       .describe("Israeli license plate number (mispar rechev), e.g. 1234567"),
   })
   .strict();
@@ -134,9 +133,8 @@ const CountVehiclesSchema = z
 const GetTestStatusSchema = z
   .object({
     plate_number: z
-      .number()
-      .int()
-      .positive()
+      .coerce.string()
+      .regex(/^\d{5,8}$/, "Plate number must be 5-8 digits")
       .describe("Israeli license plate number"),
   })
   .strict();
@@ -383,8 +381,8 @@ export function registerTools(server: McpServer): void {
 
         const rec = result.records[0];
         const validUntil = String(rec.tokef_dt || "");
-        const today = new Date().toISOString().slice(0, 10);
-        const isValid = validUntil >= today;
+        const validDate = new Date(String(rec.tokef_dt || ""));
+        const isValid = !isNaN(validDate.getTime()) && validDate >= new Date();
 
         const lines = [
           `# Test Status for ${rec.kinuy_mishari || rec.tozeret_nm} (${plate_number})`,
@@ -424,7 +422,7 @@ export function registerTools(server: McpServer): void {
       title: "List Vehicle Manufacturers",
       description:
         "Discover vehicle manufacturer names in the Israeli registry. " +
-        "Fetches a sample of vehicles and extracts unique manufacturer names. " +
+        "Fetches a sample of up to 500 vehicles and extracts unique manufacturer names. " +
         "Optionally filter by a search term. Manufacturer names are in Hebrew. " +
         "Use count_vehicles with a specific manufacturer to get exact counts.",
       inputSchema: ListManufacturersSchema,
@@ -436,11 +434,11 @@ export function registerTools(server: McpServer): void {
     },
     async ({ search }) => {
       try {
-        // Fetch a large sample to discover manufacturers
+        // Fetch a sample to discover manufacturers
         const result = await datastoreSearch({
           q: search,
           fields: "tozeret_nm",
-          limit: 32000,
+          limit: 500,
         });
 
         // Aggregate unique manufacturers from the sample

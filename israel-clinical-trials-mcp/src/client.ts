@@ -188,7 +188,7 @@ export async function searchStudies(params: SearchParams): Promise<StudyResponse
     url.searchParams.set("sort", params.sort);
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) {
     throw new Error(`ClinicalTrials.gov API error: ${response.status} ${response.statusText}`);
   }
@@ -200,7 +200,7 @@ export async function getStudyById(nctId: string): Promise<Study> {
   await rateLimit();
 
   const url = `${BASE_URL}/studies/${encodeURIComponent(nctId)}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) {
     throw new Error(`ClinicalTrials.gov API error: ${response.status} ${response.statusText}`);
   }

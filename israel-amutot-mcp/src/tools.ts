@@ -34,7 +34,7 @@ const DONATION_FIELDS = {
   donationDate: "תאריך קבלת התרומה",
   donorEntity: "ישות מדינית זרה תורמת",
   donorType: "סוג ישות מדינית זרה תורמת (קוד)",
-  amountILS: "סכום התרומה בש~ח",
+  amountILS: 'סכום התרומה בש"ח',
   currency: "מטבע",
   exchangeRate: "שער המרה",
   purpose: "מטרת תרומה",

@@ -142,13 +142,11 @@ export async function searchRoutes(
 
   const result = data.result;
   const start = result.startFromIndex ?? 0;
-  const count = result.numOfResultsToShow ?? result.travels.length;
-  const travels =
-    count > 0
-      ? result.travels.slice(start, start + count)
-      : result.travels;
+  const travels = result.travels ?? [];
+  const count = result.numOfResultsToShow ?? travels.length;
+  const sliced = count > 0 ? travels.slice(start, start + count) : [];
 
-  return travels.map((t) => ({
+  return sliced.map((t) => ({
     departureTime: t.departureTime,
     arrivalTime: t.arrivalTime,
     trains: t.trains.map((tr) => ({

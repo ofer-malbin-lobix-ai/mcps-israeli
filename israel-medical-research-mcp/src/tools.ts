@@ -35,6 +35,10 @@ interface ESummaryResult {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function sanitizePubMedInput(input: string): string {
+  return input.replace(/[[\]()]/g, " ").replace(/\b(AND|OR|NOT)\b/gi, "").trim();
+}
+
 function buildIsraelQuery(parts: {
   query?: string;
   institution?: string;
@@ -42,11 +46,11 @@ function buildIsraelQuery(parts: {
   const terms: string[] = [];
 
   if (parts.query) {
-    terms.push(`(${parts.query}[Title/Abstract])`);
+    terms.push(`(${sanitizePubMedInput(parts.query)}[Title/Abstract])`);
   }
 
   if (parts.institution) {
-    terms.push(`(${parts.institution}[affiliation])`);
+    terms.push(`(${sanitizePubMedInput(parts.institution)}[affiliation])`);
   }
 
   terms.push("(israel[affiliation])");
