@@ -21,12 +21,12 @@ async function rateLimitedWait(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
   const waitMs = REQUEST_INTERVAL_MS - elapsed;
-  lastRequestTime = waitMs > 0 ? now + waitMs : now;
   if (waitMs > 0) {
     await new Promise((resolve) =>
       setTimeout(resolve, waitMs)
     );
   }
+  lastRequestTime = Date.now();
 }
 
 export async function fetchWithRateLimit(
@@ -91,9 +91,14 @@ export async function fetchText(url: string): Promise<string> {
   }
   const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
   if (contentLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large (${contentLength} bytes). Maximum is ${MAX_RESPONSE_SIZE} bytes.`);
+    throw new Error(`Response too large: ${contentLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
   }
-  return response.text();
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response too large: ${buffer.byteLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
+  }
+  const text = new TextDecoder().decode(buffer);
+  return text;
 }
 
 export async function fetchXml(url: string): Promise<string> {
@@ -109,9 +114,14 @@ export async function fetchXml(url: string): Promise<string> {
   }
   const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
   if (contentLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large (${contentLength} bytes). Maximum is ${MAX_RESPONSE_SIZE} bytes.`);
+    throw new Error(`Response too large: ${contentLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
   }
-  return response.text();
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response too large: ${buffer.byteLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
+  }
+  const text = new TextDecoder().decode(buffer);
+  return text;
 }
 
 /**

@@ -55,11 +55,15 @@ export function registerTools(server: McpServer): void {
     {
       title: "List TASE Securities",
       description: "List all securities traded on the Tel Aviv Stock Exchange (TASE), including stocks, bonds, and ETFs. Returns security IDs, names, and classification data.",
-      inputSchema: { lang: langSchema },
+      inputSchema: {
+        lang: langSchema,
+        limit: z.number().int().min(1).max(1000).optional().default(100).describe("Maximum number of securities to return (default 100)"),
+        offset: z.number().int().min(0).optional().default(0).describe("Number of securities to skip for pagination (default 0)"),
+      },
       annotations: toolAnnotations,
     },
-    async ({ lang }) => {
-      const result = await taseClient.get("/securities", undefined, lang);
+    async ({ lang, limit, offset }) => {
+      const result = await taseClient.get("/securities", { limit, offset }, lang);
       return formatResult(result);
     }
   );

@@ -96,7 +96,7 @@ export function registerTools(server: McpServer): void {
       origin: z
         .string()
         .optional()
-        .describe("Filter by origin city name (English, e.g. 'LONDON')"),
+        .describe("Text search across all flight fields (city, airline, etc.)"),
       status: z
         .string()
         .optional()
@@ -161,7 +161,7 @@ export function registerTools(server: McpServer): void {
       destination: z
         .string()
         .optional()
-        .describe("Filter by destination city name (English, e.g. 'PARIS')"),
+        .describe("Text search across all flight fields (city, airline, etc.)"),
       status: z
         .string()
         .optional()

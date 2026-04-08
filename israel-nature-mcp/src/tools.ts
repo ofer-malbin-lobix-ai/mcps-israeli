@@ -72,56 +72,81 @@ function formatGBIFOccurrence(occ: GBIFOccurrence): Record<string, unknown> {
 // Tool registration
 // ---------------------------------------------------------------------------
 
+const searchObservationsShape = {
+  species: z
+    .string()
+    .optional()
+    .describe(
+      "Species name to search for (common or scientific, e.g. 'gazelle' or 'Gazella gazella')"
+    ),
+  lat: z
+    .number()
+    .min(-90)
+    .max(90)
+    .optional()
+    .describe("Latitude for location-based search"),
+  lng: z
+    .number()
+    .min(-180)
+    .max(180)
+    .optional()
+    .describe("Longitude for location-based search"),
+  radius_km: z
+    .number()
+    .min(0.1)
+    .max(500)
+    .optional()
+    .describe("Search radius in kilometers (requires lat/lng)"),
+  per_page: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(20)
+    .describe("Number of results per page (default 20, max 200)"),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .default(1)
+    .describe("Page number for pagination"),
+};
+
+const searchObservationsSchema = z
+  .object(searchObservationsShape)
+  .refine(
+    (data) => {
+      const has = [data.lat, data.lng, data.radius_km].filter(v => v !== undefined);
+      return has.length === 0 || has.length === 3;
+    },
+    { message: "lat, lng, and radius_km must all be provided together" }
+  );
+
 export function registerTools(server: McpServer): void {
   // 1. search_observations
   server.tool(
     "search_observations",
     "Search nature observations in Israel via iNaturalist. Returns recent observations with species, location, date, and photo URLs. Filter by species name, geographic coordinates, or both.",
-    {
-      species: z
-        .string()
-        .optional()
-        .describe(
-          "Species name to search for (common or scientific, e.g. 'gazelle' or 'Gazella gazella')"
-        ),
-      lat: z
-        .number()
-        .min(-90)
-        .max(90)
-        .optional()
-        .describe("Latitude for location-based search"),
-      lng: z
-        .number()
-        .min(-180)
-        .max(180)
-        .optional()
-        .describe("Longitude for location-based search"),
-      radius_km: z
-        .number()
-        .min(0.1)
-        .max(500)
-        .optional()
-        .describe("Search radius in kilometers (requires lat/lng)"),
-      per_page: z
-        .number()
-        .int()
-        .min(1)
-        .max(200)
-        .default(20)
-        .describe("Number of results per page (default 20, max 200)"),
-      page: z
-        .number()
-        .int()
-        .min(1)
-        .default(1)
-        .describe("Page number for pagination"),
-    },
+    searchObservationsShape,
     {
       readOnlyHint: true,
       destructiveHint: false,
       openWorldHint: true,
     },
-    async (params) => {
+    async (rawParams) => {
+      const parsed = searchObservationsSchema.safeParse(rawParams);
+      if (!parsed.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Invalid parameters: ${parsed.error.errors.map(e => e.message).join(", ")}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const params = parsed.data;
       try {
         const data = await searchObservations({
           species: params.species,

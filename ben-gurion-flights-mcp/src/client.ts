@@ -104,7 +104,7 @@ export async function searchFlights(params: SearchParams = {}): Promise<{
     url.searchParams.set("sort", params.sort);
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) });
 
   if (!response.ok) {
     throw new Error(

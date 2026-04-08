@@ -46,7 +46,7 @@ async function rateLimitedFetch(url: string): Promise<Response> {
     await new Promise((resolve) => setTimeout(resolve, MIN_INTERVAL_MS - elapsed));
   }
   lastRequestTime = Date.now();
-  return fetch(url);
+  return fetch(url, { signal: AbortSignal.timeout(30_000) });
 }
 
 export interface CKANResponse {

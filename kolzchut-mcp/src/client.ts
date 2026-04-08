@@ -278,12 +278,16 @@ export async function listCategoryMembers(
   limit: number,
   continueToken?: string
 ): Promise<CategoryMembersOutput> {
+  let cmtitle = category;
+  if (cmtitle.startsWith("Category:")) {
+    cmtitle = `קטגוריה:${cmtitle.slice("Category:".length)}`;
+  } else if (!cmtitle.startsWith("קטגוריה:")) {
+    cmtitle = `קטגוריה:${cmtitle}`;
+  }
   const params: Record<string, string> = {
     action: "query",
     list: "categorymembers",
-    cmtitle: category.startsWith("Category:") || category.startsWith("קטגוריה:")
-      ? category
-      : `קטגוריה:${category}`,
+    cmtitle,
     cmlimit: String(limit),
     cmtype: "page|subcat",
   };
@@ -340,21 +344,16 @@ export async function listCategories(
   };
 }
 
-const HTML_ENTITY_MAP: Record<string, string> = {
-  "&nbsp;": " ",
-  "&amp;": "&",
-  "&lt;": "<",
-  "&gt;": ">",
-  "&quot;": '"',
-  "&#039;": "'",
-  "&#39;": "'",
-};
-
 function decodeHtmlEntities(text: string): string {
-  return text.replace(
-    /&(?:nbsp|amp|lt|gt|quot|#0?39);/gi,
-    (match) => HTML_ENTITY_MAP[match.toLowerCase()] ?? match,
-  );
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
 function stripHtml(html: string): string {

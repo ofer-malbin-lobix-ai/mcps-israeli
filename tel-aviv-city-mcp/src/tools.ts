@@ -22,13 +22,13 @@ import {
 const LocationSchema = z.object({
   longitude: z
     .number()
-    .min(34.7)
-    .max(34.85)
+    .min(34.74)
+    .max(34.86)
     .describe("Longitude (WGS-84) within Tel Aviv area"),
   latitude: z
     .number()
-    .min(32.03)
-    .max(32.15)
+    .min(32.02)
+    .max(32.16)
     .describe("Latitude (WGS-84) within Tel Aviv area"),
 });
 
@@ -315,7 +315,7 @@ export async function getRoadClosures(
         "avodot_ptuhot",
       ],
       resultRecordCount: 50,
-      returnGeometry: false,
+      returnGeometry: true,
     }),
     queryLayer({
       layerId: LAYERS.ROAD_WORKS_POINT,

@@ -265,9 +265,11 @@ export async function searchByNutrient(
   limit: number = 20
 ): Promise<{ records: FoodRecord[]; total: number }> {
   const sortDirection = order === "high" ? "desc" : "asc";
-  return datastoreSearch<FoodRecord>({
+  const result = await datastoreSearch<FoodRecord>({
     resourceId: RESOURCE_IDS.FOODS,
     sort: `${nutrient} ${sortDirection}`,
     limit,
   });
+  result.records = result.records.filter(r => r[nutrient] != null && r[nutrient] !== '');
+  return result;
 }

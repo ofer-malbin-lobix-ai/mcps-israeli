@@ -637,12 +637,12 @@ export function registerTools(server: McpServer): void {
         x: z
           .number()
           .describe(
-            "For itm_to_wgs84: ITM Easting. For wgs84_to_itm: WGS84 Latitude."
+            "For itm_to_wgs84: ITM Easting (X). For wgs84_to_itm: WGS84 Latitude (note: NOT longitude)"
           ),
         y: z
           .number()
           .describe(
-            "For itm_to_wgs84: ITM Northing. For wgs84_to_itm: WGS84 Longitude."
+            "For itm_to_wgs84: ITM Northing (Y). For wgs84_to_itm: WGS84 Longitude (note: NOT latitude)"
           ),
       }),
       annotations: {

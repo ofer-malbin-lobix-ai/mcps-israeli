@@ -34,10 +34,11 @@ function resolveStation(query: string): { id: string; name: string } {
 function formatTime(isoString: string): string {
   try {
     const d = new Date(isoString);
-    return d.toLocaleTimeString("en-IL", {
+    return d.toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
+      timeZone: "Asia/Jerusalem",
     });
   } catch {
     return isoString;
@@ -52,7 +53,7 @@ export function registerTools(server: McpServer): void {
       title: "Search Train Routes",
       description:
         "Search for train routes between two Israel Railways stations. Returns departure/arrival times, platform numbers, transfers, and predicted occupancy. Station names can be in Hebrew or English (fuzzy matching supported).",
-      inputSchema: {
+      inputSchema: z.object({
         from: z
           .string()
           .describe(
@@ -72,7 +73,7 @@ export function registerTools(server: McpServer): void {
           .regex(/^\d{2}:\d{2}$/, "Time must be HH:MM")
           .default("08:00")
           .describe("Departure time in HH:MM format (default 08:00)"),
-      },
+      }),
       annotations: TOOL_ANNOTATIONS,
     },
     async ({ from, to, date, hour }) => {
@@ -133,14 +134,14 @@ export function registerTools(server: McpServer): void {
       title: "List Stations",
       description:
         "List all Israel Railways stations with IDs and names in Hebrew and English. Use this to find station IDs for the search_routes tool.",
-      inputSchema: {
+      inputSchema: z.object({
         filter: z
           .string()
           .optional()
           .describe(
             'Optional filter to search by name (Hebrew or English), e.g. "Tel Aviv", "ירושלים"'
           ),
-      },
+      }),
       annotations: TOOL_ANNOTATIONS,
     },
     async ({ filter }) => {
@@ -182,7 +183,7 @@ export function registerTools(server: McpServer): void {
       title: "Get Service Updates",
       description:
         "Get current Israel Railways service updates, disruptions, and announcements. Includes scheduled maintenance, route changes, and emergency notices.",
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: TOOL_ANNOTATIONS,
     },
     async () => {
