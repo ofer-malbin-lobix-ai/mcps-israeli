@@ -106,6 +106,11 @@ export async function fetchWithRateLimit(
       return response;
     } catch (err) {
       clearTimeout(timeout);
+      const errAny = err as { message?: string; cause?: { code?: string; message?: string }; code?: string };
+      const cause = errAny?.cause;
+      const code = errAny?.code ?? cause?.code ?? "unknown";
+      const msg = errAny?.message ?? cause?.message ?? String(err);
+      console.error(`[fetch] url=${url.slice(0, 80)} attempt=${attempt + 1} NETERR code=${code} msg=${msg.slice(0, 120)}`);
       lastError =
         err instanceof Error ? err : new Error(String(err));
 
