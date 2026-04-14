@@ -388,6 +388,27 @@ interface ShufersalFileEntry {
  * Parse Shufersal's file listing page to extract download links.
  * The page uses a table with download links in specific columns.
  */
+/**
+ * Extract YYYYMMDD date from a filename. Supermarket filenames contain both the
+ * chain ID (starts with 72/73) and the date (starts with 20/19), so prefer the
+ * 8-digit run that looks like a plausible year.
+ */
+function extractFileDate(name: string): string {
+  const runs = name.match(/\d{8}/g) ?? [];
+  const year = runs.find((d) => d.startsWith("20") || d.startsWith("19"));
+  if (!year) return "unknown";
+  return `${year.slice(0, 4)}-${year.slice(4, 6)}-${year.slice(6, 8)}`;
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
 function parseShufersalFileList(html: string): ShufersalFileEntry[] {
   const entries: ShufersalFileEntry[] = [];
 
@@ -401,7 +422,7 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
     const urlMatch = link.match(/href="([^"]*)"/i);
     if (!urlMatch) continue;
 
-    let fileUrl = urlMatch[1];
+    let fileUrl = decodeHtmlEntities(urlMatch[1]);
     if (fileUrl.startsWith("/")) {
       fileUrl = `https://prices.shufersal.co.il${fileUrl}`;
     }
@@ -409,11 +430,7 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
     const nameMatch = fileUrl.match(/([^/]+\.(?:gz|xml))$/i);
     const name = nameMatch ? nameMatch[1] : fileUrl;
 
-    // Try to extract date from filename (format: YYYYMMDD)
-    const dateMatch = name.match(/(\d{8})/);
-    const date = dateMatch
-      ? `${dateMatch[1].slice(0, 4)}-${dateMatch[1].slice(4, 6)}-${dateMatch[1].slice(6, 8)}`
-      : "unknown";
+    const date = extractFileDate(name);
 
     entries.push({ name, url: fileUrl, date });
   }
@@ -429,7 +446,7 @@ function parseShufersalFileList(html: string): ShufersalFileEntry[] {
     const texts = cells.map((c) => stripTags(c).trim());
 
     if (texts.length >= 2) {
-      let fileUrl = linkMatch[1];
+      let fileUrl = decodeHtmlEntities(linkMatch[1]);
       if (fileUrl.startsWith("/")) {
         fileUrl = `https://prices.shufersal.co.il${fileUrl}`;
       }
@@ -476,10 +493,7 @@ function parsePublishPriceFileList(
         ? `${baseUrl.replace(/\/$/, "")}/${path}/${file.name}`
         : `${baseUrl.replace(/\/$/, "")}/${file.name}`;
 
-      const dateMatch = file.name.match(/(\d{8})/);
-      const date = dateMatch
-        ? `${dateMatch[1].slice(0, 4)}-${dateMatch[1].slice(4, 6)}-${dateMatch[1].slice(6, 8)}`
-        : "unknown";
+      const date = extractFileDate(file.name);
 
       entries.push({ name: file.name, url: fileUrl, date });
     }
@@ -1393,6 +1407,153 @@ export function registerTools(server: McpServer): void {
         "  Kaggle (aggregated): erlichsefi/israeli-supermarkets-2024",
         "  Python scraper: pip install il-supermarket-scarper",
       ];
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+      };
+    }
+  );
+
+  // =========================================================================
+  // 8. find_product -- one-shot price comparison across chains
+  // =========================================================================
+  server.tool(
+    "find_product",
+    "One-shot price comparison. Given a product name (Hebrew OK) or barcode, fetches the latest PriceFull file of each specified chain in parallel, finds matches, and returns a list sorted cheapest first. Replaces the list_chains → get_chain_files → search_products → compare_prices workflow.",
+    {
+      query: z
+        .string()
+        .min(2)
+        .describe("Product name (Hebrew OK) or barcode (7+ digits)"),
+      chains: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Chain keys to search. Defaults to ['shufersal','yeinot_bitan'] (the two web-accessible chains)."
+        ),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(5)
+        .describe("Max matches per chain (default 5)"),
+    },
+    {
+      title: "Find Cheapest Price",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async ({ query, chains, limit }) => {
+      const targets = chains ?? ["shufersal", "yeinot_bitan"];
+      const isBarcode = /^\d{7,}$/.test(query.trim());
+      const needle = query.trim().toLowerCase();
+
+      interface Match {
+        chainName: string;
+        itemName: string;
+        itemCode: string;
+        price: number;
+        unitPrice?: string;
+        manufacturer?: string;
+        updatedAt?: string;
+      }
+
+      async function searchChain(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+        const info = CHAINS[chainKey];
+        if (!info) return { chainKey, matches: [], error: `unknown chain: ${chainKey}` };
+        if (!info.directAccess) {
+          return { chainKey, matches: [], error: `${info.nameEn} requires FTP access (not supported by this MCP)` };
+        }
+
+        try {
+          // 1. List files and pick the newest PriceFull
+          let entries: ShufersalFileEntry[] = [];
+          if (info.dataSource === "web") {
+            const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
+            const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
+            const html = await fetchText(url);
+            entries = parseShufersalFileList(html);
+          } else if (info.dataSource === "publishprice") {
+            const html = await fetchText(info.endpoint);
+            entries = parsePublishPriceFileList(html, info.endpoint);
+            entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+          }
+
+          if (entries.length === 0) {
+            return { chainKey, matches: [], error: `no PriceFull files found for ${info.nameEn}` };
+          }
+
+          const priceUrl = entries[0].url;
+          const updatedAt = entries[0].date;
+
+          // 2. Fetch + parse
+          const xml = await fetchXml(priceUrl);
+          const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
+
+          // 3. Filter
+          const filtered: Match[] = [];
+          for (const it of items) {
+            const code = it["ItemCode"] ?? "";
+            const name = it["ItemName"] ?? "";
+            const hit = isBarcode
+              ? code === query.trim()
+              : name.toLowerCase().includes(needle);
+            if (!hit) continue;
+            const priceStr = it["ItemPrice"] ?? "";
+            const price = Number(priceStr);
+            if (!Number.isFinite(price) || price <= 0) continue;
+            filtered.push({
+              chainName: info.nameEn,
+              itemName: name,
+              itemCode: code,
+              price,
+              unitPrice: it["UnitOfMeasurePrice"],
+              manufacturer: it["ManufacturerName"],
+              updatedAt,
+            });
+          }
+
+          filtered.sort((a, b) => a.price - b.price);
+          return { chainKey, matches: filtered.slice(0, limit) };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { chainKey, matches: [], error: msg };
+        }
+      }
+
+      const results = await Promise.all(targets.map(searchChain));
+
+      const allMatches = results.flatMap((r) => r.matches);
+      allMatches.sort((a, b) => a.price - b.price);
+
+      const failures = results.filter((r) => r.error).map((r) => `${r.chainKey}: ${r.error}`);
+
+      const lines: string[] = [];
+      lines.push(`Price comparison for: ${query}`);
+      lines.push("=".repeat(50));
+
+      if (allMatches.length === 0) {
+        lines.push("");
+        lines.push("No matches found.");
+      } else {
+        lines.push("");
+        allMatches.forEach((m, i) => {
+          lines.push(`${i + 1}. ${m.chainName} — ₪${m.price.toFixed(2)}`);
+          lines.push(`   ${m.itemName}`);
+          lines.push(`   barcode=${m.itemCode}${m.manufacturer ? ` | ${m.manufacturer}` : ""}${m.unitPrice ? ` | unit=₪${m.unitPrice}` : ""}`);
+          if (m.updatedAt && m.updatedAt !== "unknown") lines.push(`   updated=${m.updatedAt}`);
+          lines.push("");
+        });
+      }
+
+      if (failures.length > 0) {
+        lines.push("---");
+        lines.push("Partial failures:");
+        for (const f of failures) lines.push(`  ${f}`);
+      }
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],

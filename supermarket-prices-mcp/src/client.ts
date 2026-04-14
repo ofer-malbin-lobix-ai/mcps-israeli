@@ -1,5 +1,6 @@
 /**
- * HTTP client with rate limiting for fetching Israeli supermarket price data.
+ * HTTP client with rate limiting, gzip decompression, and in-memory caching
+ * for fetching Israeli supermarket price data.
  *
  * Data sources:
  * - Shufersal: https://prices.shufersal.co.il/ (web scraping, HTML pages)
@@ -10,21 +11,55 @@
  * but not directly accessed (they require FTP protocol support).
  */
 
+import { gunzipSync } from "node:zlib";
+
 const REQUEST_INTERVAL_MS = 1500;
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 2;
-const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_RESPONSE_SIZE = 100 * 1024 * 1024; // 100 MB uncompressed (gz XMLs can hit 30-80 MB)
+
+const CACHE_TTL_HTML_MS = 10 * 60_000;        // 10 min for file listings
+const CACHE_TTL_XML_MS = 2 * 60 * 60_000;     // 2 h for PriceFull XMLs
+const CACHE_MAX_ENTRIES = 20;
 
 let lastRequestTime = 0;
+
+interface CacheEntry {
+  body: string;
+  expiresAt: number;
+}
+const cache = new Map<string, CacheEntry>();
+
+function cacheGet(url: string): string | undefined {
+  const entry = cache.get(url);
+  if (!entry) return undefined;
+  if (entry.expiresAt < Date.now()) {
+    cache.delete(url);
+    return undefined;
+  }
+  return entry.body;
+}
+
+function cachePut(url: string, body: string, ttl: number): void {
+  if (cache.size >= CACHE_MAX_ENTRIES) {
+    // Evict oldest (insertion order in Map)
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(url, { body, expiresAt: Date.now() + ttl });
+}
+
+function ttlForUrl(url: string): number {
+  const u = url.toLowerCase();
+  return u.endsWith(".gz") || u.endsWith(".xml") || u.includes(".xml?") ? CACHE_TTL_XML_MS : CACHE_TTL_HTML_MS;
+}
 
 async function rateLimitedWait(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
   const waitMs = REQUEST_INTERVAL_MS - elapsed;
   if (waitMs > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, waitMs)
-    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
   lastRequestTime = Date.now();
 }
@@ -53,6 +88,7 @@ export async function fetchWithRateLimit(
           "User-Agent":
             "supermarket-prices-mcp/1.0 (Israeli Price Transparency MCP Server)",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Encoding": "gzip",
           "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
           ...options.headers,
         },
@@ -82,46 +118,69 @@ export async function fetchWithRateLimit(
   throw lastError ?? new Error("Request failed after retries");
 }
 
-export async function fetchText(url: string): Promise<string> {
-  const response = await fetchWithRateLimit(url);
+/** Decode a fetched body, transparently decompressing gzip when detected. */
+function decodeBody(url: string, bytes: Buffer): { text: string; gz: boolean } {
+  const isGz =
+    url.toLowerCase().endsWith(".gz") ||
+    (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b);
+  if (!isGz) {
+    return { text: new TextDecoder().decode(bytes), gz: false };
+  }
+  try {
+    return { text: gunzipSync(bytes).toString("utf-8"), gz: true };
+  } catch {
+    // Fallback: treat as raw bytes if gunzip fails (maybe already decompressed by undici)
+    return { text: new TextDecoder().decode(bytes), gz: false };
+  }
+}
+
+async function fetchAndDecode(url: string, acceptHeader: string): Promise<string> {
+  const cached = cacheGet(url);
+  if (cached !== undefined) {
+    console.error(`[fetch] url=${url.slice(0, 80)} cache=HIT dt=<1ms`);
+    return cached;
+  }
+
+  const start = Date.now();
+  const response = await fetchWithRateLimit(url, {
+    headers: { Accept: acceptHeader },
+  });
+
   if (!response.ok) {
+    const dt = Date.now() - start;
+    console.error(`[fetch] url=${url.slice(0, 80)} dt=${dt}ms status=${response.status} ERROR`);
     throw new Error(
       `HTTP ${response.status} fetching ${url}: ${response.statusText}`
     );
   }
-  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-  if (contentLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large: ${contentLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const { text, gz } = decodeBody(url, bytes);
+
+  if (text.length > MAX_RESPONSE_SIZE) {
+    throw new Error(
+      `Response too large: ${text.length} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`
+    );
   }
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large: ${buffer.byteLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
-  }
-  const text = new TextDecoder().decode(buffer);
+
+  const dt = Date.now() - start;
+  console.error(
+    `[fetch] url=${url.slice(0, 80)} dt=${dt}ms size=${text.length} status=${response.status}${gz ? " gz" : ""}`
+  );
+
+  cachePut(url, text, ttlForUrl(url));
   return text;
 }
 
+export async function fetchText(url: string): Promise<string> {
+  return fetchAndDecode(
+    url,
+    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+  );
+}
+
 export async function fetchXml(url: string): Promise<string> {
-  const response = await fetchWithRateLimit(url, {
-    headers: {
-      Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} fetching XML from ${url}: ${response.statusText}`
-    );
-  }
-  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-  if (contentLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large: ${contentLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
-  }
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > MAX_RESPONSE_SIZE) {
-    throw new Error(`Response too large: ${buffer.byteLength} bytes exceeds ${MAX_RESPONSE_SIZE} byte limit`);
-  }
-  const text = new TextDecoder().decode(buffer);
-  return text;
+  return fetchAndDecode(url, "application/xml,text/xml;q=0.9,*/*;q=0.8");
 }
 
 /**
