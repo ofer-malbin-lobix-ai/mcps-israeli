@@ -10,6 +10,15 @@ const API_KEY =
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
+// Optional Israeli egress proxy. rail-api.rail.co.il is fronted by Cloudflare
+// with a WAF that rejects requests from many datacenter ASNs (Railway Singapore
+// / EU West both 403 even with correct headers). If IL_PROXY_URL is set, all
+// rail-api traffic is forwarded through a small proxy running in AWS
+// il-central-1 (Tel Aviv) whose IP range the WAF accepts. The proxy accepts
+// POST JSON {endpoint, body} with an x-api-key header matching IL_PROXY_KEY.
+const IL_PROXY_URL = process.env.IL_PROXY_URL;
+const IL_PROXY_KEY = process.env.IL_PROXY_KEY;
+
 export interface TrainLeg {
   trainNumber: number;
   originStation: string;
@@ -59,22 +68,32 @@ async function railRequest<T>(
   }
   lastRequestTime = Date.now();
 
-  const response = await fetch(`${API_BASE}/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ocp-apim-subscription-key": API_KEY,
-      "User-Agent": USER_AGENT,
-      // rail-api.rail.co.il's WAF rejects requests that don't look like they
-      // originated from the official site. Without these, every request from
-      // a datacenter ASN (e.g. Railway) returns 403 Forbidden even with a
-      // valid subscription key.
-      Referer: "https://www.rail.co.il/",
-      Origin: "https://www.rail.co.il",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = IL_PROXY_URL && IL_PROXY_KEY
+    ? await fetch(IL_PROXY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": IL_PROXY_KEY,
+        },
+        body: JSON.stringify({ endpoint, body }),
+        signal: AbortSignal.timeout(20_000),
+      })
+    : await fetch(`${API_BASE}/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ocp-apim-subscription-key": API_KEY,
+          "User-Agent": USER_AGENT,
+          // rail-api.rail.co.il's WAF rejects requests that don't look like they
+          // originated from the official site. Without these, every request from
+          // a datacenter ASN (e.g. Railway) returns 403 Forbidden even with a
+          // valid subscription key.
+          Referer: "https://www.rail.co.il/",
+          Origin: "https://www.rail.co.il",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
 
   if (!response.ok) {
     if (response.status === 403) {
