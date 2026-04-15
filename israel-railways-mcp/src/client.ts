@@ -68,6 +68,19 @@ async function railRequest<T>(
   }
   lastRequestTime = Date.now();
 
+  const upstreamUrl = `${API_BASE}/${endpoint}`;
+  const upstreamHeaders = {
+    "Content-Type": "application/json",
+    "ocp-apim-subscription-key": API_KEY,
+    "User-Agent": USER_AGENT,
+    // rail-api.rail.co.il's WAF rejects requests that don't look like they
+    // originated from the official site. Without these, every request from
+    // a datacenter ASN (e.g. Railway) returns 403 Forbidden even with a
+    // valid subscription key.
+    Referer: "https://www.rail.co.il/",
+    Origin: "https://www.rail.co.il",
+  };
+
   const response = IL_PROXY_URL && IL_PROXY_KEY
     ? await fetch(IL_PROXY_URL, {
         method: "POST",
@@ -75,22 +88,17 @@ async function railRequest<T>(
           "Content-Type": "application/json",
           "x-api-key": IL_PROXY_KEY,
         },
-        body: JSON.stringify({ endpoint, body }),
+        body: JSON.stringify({
+          url: upstreamUrl,
+          method: "POST",
+          headers: upstreamHeaders,
+          body,
+        }),
         signal: AbortSignal.timeout(20_000),
       })
-    : await fetch(`${API_BASE}/${endpoint}`, {
+    : await fetch(upstreamUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ocp-apim-subscription-key": API_KEY,
-          "User-Agent": USER_AGENT,
-          // rail-api.rail.co.il's WAF rejects requests that don't look like they
-          // originated from the official site. Without these, every request from
-          // a datacenter ASN (e.g. Railway) returns 403 Forbidden even with a
-          // valid subscription key.
-          Referer: "https://www.rail.co.il/",
-          Origin: "https://www.rail.co.il",
-        },
+        headers: upstreamHeaders,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });

@@ -13,9 +13,11 @@ if [ -z "${AWS_ACCESS_KEY_ID-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY-}" ]; then
   exit 1
 fi
 
-# Package
-tmpzip=$(mktemp -t rail-probe.XXXXXX.zip)
+# Package — mktemp leaves an empty file; zip refuses to write into a
+# non-zip file, so remove it first and let zip create it fresh.
+tmpzip=$(mktemp -t rail-probe.XXXXXX)
 trap 'rm -f "$tmpzip"' EXIT
+rm -f "$tmpzip"
 zip -qj "$tmpzip" index.mjs
 echo "packaged $(wc -c < "$tmpzip") bytes"
 
