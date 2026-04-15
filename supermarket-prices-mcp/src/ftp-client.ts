@@ -55,11 +55,17 @@ function extractFileDate(name: string): string {
   return `${year.slice(0, 4)}-${year.slice(4, 6)}-${year.slice(6, 8)}`;
 }
 
-async function withClient<T>(user: string, fn: (client: Client) => Promise<T>): Promise<T> {
+async function withClient<T>(user: string, secure: boolean, fn: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client(FTP_TIMEOUT_MS);
   client.ftp.verbose = false;
   try {
-    await client.access({ host: FTP_HOST, user, password: "", secure: false });
+    await client.access({
+      host: FTP_HOST,
+      user,
+      password: "",
+      secure,
+      secureOptions: secure ? { rejectUnauthorized: false } : undefined,
+    });
     return await fn(client);
   } finally {
     client.close();
@@ -67,15 +73,16 @@ async function withClient<T>(user: string, fn: (client: Client) => Promise<T>): 
 }
 
 /** List all PriceFull/PromoFull/Stores files for a chain, newest first by filename. */
-export async function listFtpFiles(user: string): Promise<FtpFileEntry[]> {
-  const cached = cacheGet(listCache, user);
+export async function listFtpFiles(user: string, secure = false): Promise<FtpFileEntry[]> {
+  const cacheKey = `${secure ? "ftps" : "ftp"}:${user}`;
+  const cached = cacheGet(listCache, cacheKey);
   if (cached) {
     console.error(`[ftp] chain=${user} op=list cache=HIT dt=<1ms entries=${cached.length}`);
     return cached;
   }
 
   const start = Date.now();
-  const entries = await withClient(user, async (client) => {
+  const entries = await withClient(user, secure, async (client) => {
     const raw = await client.list();
     return raw
       .filter((f) => f.isFile)
@@ -90,15 +97,15 @@ export async function listFtpFiles(user: string): Promise<FtpFileEntry[]> {
       .sort((a, b) => b.size - a.size);
   });
   const dt = Date.now() - start;
-  console.error(`[ftp] chain=${user} op=list dt=${dt}ms entries=${entries.length}`);
+  console.error(`[ftp] chain=${user} op=list dt=${dt}ms entries=${entries.length}${secure ? " tls" : ""}`);
 
-  cachePut(listCache, user, entries, CACHE_TTL_LIST_MS);
+  cachePut(listCache, cacheKey, entries, CACHE_TTL_LIST_MS);
   return entries;
 }
 
 /** Download a single file and return its decompressed text (gz if .gz, plain otherwise). */
-export async function fetchFtpXml(user: string, filename: string): Promise<string> {
-  const cacheKey = `${user}:${filename}`;
+export async function fetchFtpXml(user: string, filename: string, secure = false): Promise<string> {
+  const cacheKey = `${secure ? "ftps" : "ftp"}:${user}:${filename}`;
   const cached = cacheGet(fileCache, cacheKey);
   if (cached !== undefined) {
     console.error(`[ftp] chain=${user} file=${filename.slice(0, 60)} cache=HIT dt=<1ms`);
@@ -114,7 +121,7 @@ export async function fetchFtpXml(user: string, filename: string): Promise<strin
     },
   });
 
-  await withClient(user, async (client) => {
+  await withClient(user, secure, async (client) => {
     await client.downloadTo(sink, filename);
   });
 
@@ -131,7 +138,7 @@ export async function fetchFtpXml(user: string, filename: string): Promise<strin
 
   const dt = Date.now() - start;
   console.error(
-    `[ftp] chain=${user} file=${filename.slice(0, 60)} dt=${dt}ms size=${text.length}${isGz ? " gz" : ""}`
+    `[ftp] chain=${user} file=${filename.slice(0, 60)} dt=${dt}ms size=${text.length}${isGz ? " gz" : ""}${secure ? " tls" : ""}`
   );
 
   cachePut(fileCache, cacheKey, text, CACHE_TTL_FILE_MS);

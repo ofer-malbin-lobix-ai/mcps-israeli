@@ -47,6 +47,8 @@ interface ChainInfo {
   endpoint: string;
   /** Whether this MCP can directly fetch price files from this chain */
   directAccess: boolean;
+  /** If true, FTP connection requires TLS (FTPS). Default false. */
+  ftpSecure?: boolean;
 }
 
 const CHAINS: Record<string, ChainInfo> = {
@@ -129,6 +131,7 @@ const CHAINS: Record<string, ChainInfo> = {
     dataSource: "ftp",
     endpoint: "doralon",
     directAccess: true,
+    ftpSecure: true,
   },
   bareket: {
     id: "7290875100003",
@@ -632,7 +635,7 @@ export function registerTools(server: McpServer): void {
         let entries: ShufersalFileEntry[] = [];
 
         if (chainInfo.dataSource === "ftp") {
-          const ftpEntries = await listFtpFiles(chainInfo.endpoint);
+          const ftpEntries = await listFtpFiles(chainInfo.endpoint, chainInfo.ftpSecure ?? false);
           const typeMap: Record<string, string> = {
             prices: "price",
             pricesfull: "pricefull",
@@ -1421,7 +1424,7 @@ export function registerTools(server: McpServer): void {
         .array(z.string())
         .optional()
         .describe(
-          "Chain keys to search. Defaults to ['shufersal','rami_levy','yohananof','osher_ad','victory'] (the most popular chains). Pass explicit keys to override. Use list_chains to see all ~35 chains."
+          "Chain keys to search. Defaults to 7 verified-reachable chains: shufersal (HTTP) + rami_levy, yohananof, osher_ad, tiv_taam, keshet, dor_alon (FTP). Pass explicit keys to override. Use list_chains to see all ~35 chains."
         ),
       limit: z
         .number()
@@ -1439,7 +1442,15 @@ export function registerTools(server: McpServer): void {
       openWorldHint: true,
     },
     async ({ query, chains, limit }) => {
-      const targets = chains ?? ["shufersal", "rami_levy", "yohananof", "osher_ad", "victory"];
+      const targets = chains ?? [
+        "shufersal",
+        "rami_levy",
+        "yohananof",
+        "osher_ad",
+        "tiv_taam",
+        "keshet",
+        "dor_alon",
+      ];
       const isBarcode = /^\d{7,}$/.test(query.trim());
       const needle = query.trim().toLowerCase();
 
@@ -1462,11 +1473,11 @@ export function registerTools(server: McpServer): void {
         let xml = "";
 
         if (info.dataSource === "ftp") {
-          const ftpFiles = await listFtpFiles(info.endpoint);
+          const ftpFiles = await listFtpFiles(info.endpoint, info.ftpSecure ?? false);
           const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
           if (!pf) return { error: `no PriceFull files on FTP for ${info.nameEn}`, chainKey };
           updatedAt = pf.date;
-          xml = await fetchFtpXml(info.endpoint, pf.name);
+          xml = await fetchFtpXml(info.endpoint, pf.name, info.ftpSecure ?? false);
         } else {
           let entries: ShufersalFileEntry[] = [];
           if (info.dataSource === "web") {
