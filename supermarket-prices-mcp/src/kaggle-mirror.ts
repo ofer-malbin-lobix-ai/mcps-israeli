@@ -18,6 +18,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
+import { productSignature, signaturesMatch, type ProductSignature } from "./product-signature.js";
 
 const TTL_MS = 4 * 60 * 60_000; // 4 hours — Kaggle publishes daily, 4 h is fresh enough
 const DOWNLOAD_TIMEOUT_MS = 90_000;
@@ -227,6 +228,24 @@ export async function lookupByName(
     if (!it.itemName.toLowerCase().includes(lc)) continue;
     matches.push(it);
     if (matches.length >= limit * 4) break; // collect a few extra then sort
+  }
+  matches.sort((a, b) => a.price - b.price);
+  return matches.slice(0, limit);
+}
+
+/** Scan all items for ones whose name signature matches the given pivot. */
+export async function lookupBySignature(
+  chainKey: string,
+  pivot: ProductSignature,
+  limit = 1
+): Promise<KaggleItem[]> {
+  const snap = await loadOrRefresh(chainKey);
+  const matches: KaggleItem[] = [];
+  for (const it of Object.values(snap.byCode)) {
+    const sig = productSignature(it.itemName);
+    if (!sig) continue;
+    if (!signaturesMatch(pivot, sig)) continue;
+    matches.push(it);
   }
   matches.sort((a, b) => a.price - b.price);
   return matches.slice(0, limit);

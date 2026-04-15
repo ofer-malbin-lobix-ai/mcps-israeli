@@ -9,7 +9,8 @@ import {
   stripTags,
 } from "./client.js";
 import { listFtpFiles, fetchFtpXml } from "./ftp-client.js";
-import { lookupByBarcode as kaggleLookupByBarcode, lookupByName as kaggleLookupByName } from "./kaggle-mirror.js";
+import { lookupByBarcode as kaggleLookupByBarcode, lookupByName as kaggleLookupByName, lookupBySignature as kaggleLookupBySignature } from "./kaggle-mirror.js";
+import { productSignature, signaturesMatch, type ProductSignature } from "./product-signature.js";
 
 // ---------------------------------------------------------------------------
 // URL validation -- restrict to known Israeli supermarket price domains (SSRF prevention)
@@ -626,13 +627,29 @@ export async function searchByName(chainKey: string, needle: string, limit: numb
   }
 }
 
-export async function searchByBarcode(chainKey: string, barcode: string, limit: number): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+export async function searchByBarcode(
+  chainKey: string,
+  barcode: string,
+  limit: number,
+  pivotSig?: ProductSignature | null
+): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
   const info = CHAINS[chainKey];
   if (info?.dataSource === "kaggle") {
     try {
       const k = await kaggleLookupByBarcode(chainKey, barcode);
-      const m = kaggleToMatch(k, info.nameEn);
-      return { chainKey, matches: m ? [m] : [] };
+      if (k) {
+        const m = kaggleToMatch(k, info.nameEn);
+        return { chainKey, matches: m ? [m] : [] };
+      }
+      // Barcode miss → signature fallback scans the Kaggle snapshot.
+      if (pivotSig) {
+        const sigHits = await kaggleLookupBySignature(chainKey, pivotSig, limit);
+        return {
+          chainKey,
+          matches: sigHits.map((k) => kaggleToMatch(k, info.nameEn)!).filter(Boolean),
+        };
+      }
+      return { chainKey, matches: [] };
     } catch (err) {
       return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
     }
@@ -640,14 +657,29 @@ export async function searchByBarcode(chainKey: string, barcode: string, limit: 
   try {
     const r = await fetchChainItems(chainKey);
     if ("error" in r) return { chainKey, matches: [], error: r.error };
-    const out: Match[] = [];
+    const exact: Match[] = [];
     for (const it of r.items) {
       if ((it["ItemCode"] ?? "") !== barcode) continue;
       const m = itemToMatch(it, r.chainName, r.updatedAt);
-      if (m) out.push(m);
+      if (m) exact.push(m);
     }
-    out.sort((a, b) => a.price - b.price);
-    return { chainKey, matches: out.slice(0, limit) };
+    if (exact.length > 0) {
+      exact.sort((a, b) => a.price - b.price);
+      return { chainKey, matches: exact.slice(0, limit) };
+    }
+    // Barcode miss → try signature fallback across this chain's items.
+    if (pivotSig) {
+      const sigMatches: Match[] = [];
+      for (const it of r.items) {
+        const sig = productSignature(it["ItemName"] ?? "");
+        if (!sig || !signaturesMatch(pivotSig, sig)) continue;
+        const m = itemToMatch(it, r.chainName, r.updatedAt);
+        if (m) sigMatches.push(m);
+      }
+      sigMatches.sort((a, b) => a.price - b.price);
+      return { chainKey, matches: sigMatches.slice(0, limit) };
+    }
+    return { chainKey, matches: [] };
   } catch (err) {
     return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
   }
@@ -1605,26 +1637,44 @@ export function registerTools(server: McpServer): void {
       if (isBarcode) {
         results = await Promise.all(targets.map((c) => searchByBarcode(c, query.trim(), limit)));
       } else {
-        // Phase A: resolve barcode from Shufersal (best name completeness).
-        const pivotChain = targets.find((c) => c === "shufersal") ?? targets[0];
-        const pivot = await searchByName(pivotChain, needle, limit);
-        const pivotBarcode = pivot.matches[0]?.itemCode;
+        // Phase A: try Shufersal first, then fall back to other pivots if Shufersal
+        // doesn't carry the product.
+        const pivotCandidates = [
+          targets.find((c) => c === "shufersal"),
+          targets.find((c) => c === "yeinot_bitan"),
+          targets.find((c) => c === "rami_levy"),
+          targets[0],
+        ].filter((c): c is string => Boolean(c));
 
-        if (pivotBarcode) {
-          // Phase B: search remaining chains by barcode. If a chain has no exact-barcode
-          // hit, fall back to name search on the same (cached) item list so chains stocking
-          // a sibling SKU still contribute a price. Keep all pivot matches.
+        let pivotChain = "";
+        let pivot: { chainKey: string; matches: Match[]; error?: string } | null = null;
+        for (const candidate of pivotCandidates) {
+          const r = await searchByName(candidate, needle, limit);
+          if (r.matches.length > 0) {
+            pivotChain = candidate;
+            pivot = r;
+            break;
+          }
+        }
+
+        const pivotBarcode = pivot?.matches[0]?.itemCode;
+        const pivotSig = pivot?.matches[0] ? productSignature(pivot.matches[0].itemName) : null;
+
+        if (pivot && pivotBarcode) {
+          // Phase B: search remaining chains by (barcode, pivotSig). If a chain
+          // has no exact-barcode hit and no signature-match, fall back to name
+          // search so chains with a differently-named sibling still contribute.
           const others = targets.filter((c) => c !== pivotChain);
           const byBarcode = await Promise.all(
             others.map(async (c) => {
-              const r = await searchByBarcode(c, pivotBarcode, limit);
+              const r = await searchByBarcode(c, pivotBarcode, limit, pivotSig);
               if (r.matches.length > 0 || r.error) return r;
               return searchByName(c, needle, limit);
             })
           );
           results = [pivot, ...byBarcode];
         } else {
-          // Fallback: name substring across all chains (legacy behavior).
+          // All pivots failed → raw name substring across every chain.
           results = await Promise.all(targets.map((c) => searchByName(c, needle, limit)));
         }
       }
@@ -1707,23 +1757,31 @@ export function registerTools(server: McpServer): void {
       ];
       const qtys = items.map((_, i) => quantities?.[i] ?? 1);
 
-      // Resolve each item → barcode via Shufersal name search (for name queries).
+      // Resolve each item → barcode + product signature (via pivot chains).
       interface Resolved {
         original: string;
         barcode: string | null;
-        label: string; // human-readable product name for output (Shufersal name if resolved)
+        label: string;
+        sig: ProductSignature | null;
       }
+      const pivotChainsInOrder = ["shufersal", "yeinot_bitan", "rami_levy"];
       const resolved: Resolved[] = await Promise.all(
         items.map(async (raw) => {
           const q = raw.trim();
-          if (/^\d{7,}$/.test(q)) return { original: raw, barcode: q, label: q };
-          const hit = await searchByName("shufersal", q.toLowerCase(), 1);
-          const m = hit.matches[0];
-          return {
-            original: raw,
-            barcode: m?.itemCode ?? null,
-            label: m?.itemName ?? raw,
-          };
+          if (/^\d{7,}$/.test(q)) return { original: raw, barcode: q, label: q, sig: null };
+          for (const pivotChain of pivotChainsInOrder) {
+            const hit = await searchByName(pivotChain, q.toLowerCase(), 1);
+            const m = hit.matches[0];
+            if (m) {
+              return {
+                original: raw,
+                barcode: m.itemCode,
+                label: m.itemName,
+                sig: productSignature(m.itemName),
+              };
+            }
+          }
+          return { original: raw, barcode: null, label: raw, sig: null };
         })
       );
 
@@ -1764,7 +1822,12 @@ export function registerTools(server: McpServer): void {
             if (!bc) { missing.push(i); continue; }
             try {
               const k = await kaggleLookupByBarcode(chainKey, bc);
-              const m = kaggleToMatch(k, info.nameEn);
+              let m = kaggleToMatch(k, info.nameEn);
+              // Signature fallback when barcode isn't carried here.
+              if (!m && resolved[i].sig) {
+                const sigHits = await kaggleLookupBySignature(chainKey, resolved[i].sig!, 1);
+                m = sigHits.length > 0 ? kaggleToMatch(sigHits[0], info.nameEn) : undefined;
+              }
               if (m) {
                 perItem[i] = m;
                 total += m.price * qtys[i];
@@ -1797,7 +1860,17 @@ export function registerTools(server: McpServer): void {
             const bc = resolved[i].barcode;
             if (!bc) { missing.push(i); continue; }
             const it = byCode.get(bc);
-            const m = it ? itemToMatch(it, r.chainName, r.updatedAt) : undefined;
+            let m: Match | undefined = it ? itemToMatch(it, r.chainName, r.updatedAt) : undefined;
+            // Signature fallback: scan items for a same-product sibling.
+            if (!m && resolved[i].sig) {
+              for (const cand of r.items) {
+                const sig = productSignature(cand["ItemName"] ?? "");
+                if (sig && signaturesMatch(resolved[i].sig!, sig)) {
+                  m = itemToMatch(cand, r.chainName, r.updatedAt);
+                  if (m) break;
+                }
+              }
+            }
             if (m) {
               perItem[i] = m;
               total += m.price * qtys[i];
