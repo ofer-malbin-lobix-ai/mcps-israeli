@@ -74,8 +74,11 @@ const CHAINS: Record<string, ChainInfo> = {
     id: "7290055700007",
     nameHe: "יינות ביתן",
     nameEn: "Yeinot Bitan / Carrefour",
-    dataSource: "kaggle",
-    endpoint: "price_full_file_yayno_bitan_and_carrefour.csv",
+    // Reachable from Railway only via the IL proxy (Cloudflare WAF blocks
+    // direct Railway egress). client.ts routes prices.carrefour.co.il through
+    // the proxy automatically when IL_PROXY_URL/IL_PROXY_KEY are set.
+    dataSource: "publishprice",
+    endpoint: "https://prices.carrefour.co.il/",
     directAccess: true,
   },
   osher_ad: {
@@ -388,6 +391,7 @@ interface ShufersalFileEntry {
   name: string;
   url: string;
   date: string;
+  size?: number;
 }
 
 /**
@@ -501,7 +505,7 @@ function parsePublishPriceFileList(
 
       const date = extractFileDate(file.name);
 
-      entries.push({ name: file.name, url: fileUrl, date });
+      entries.push({ name: file.name, url: fileUrl, date, size: file.size });
     }
   } catch {
     // JSON parse failed -- return empty
@@ -559,6 +563,10 @@ export async function fetchChainItems(chainKey: string): Promise<ChainItemsResul
       const html = await fetchText(info.endpoint);
       entries = parsePublishPriceFileList(html, info.endpoint);
       entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+      // Publishprice chains often split by store — pick the largest file
+      // (flagship store with widest inventory) rather than whatever happens
+      // to be first in the list.
+      entries.sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
     }
     if (entries.length === 0) return { error: `no PriceFull files found for ${info.nameEn}`, chainKey };
     updatedAt = entries[0].date;

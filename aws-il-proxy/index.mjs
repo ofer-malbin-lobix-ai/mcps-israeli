@@ -86,11 +86,17 @@ export const handler = async (event) => {
       signal: AbortSignal.timeout(20000),
     });
 
-    const text = await upstream.text();
+    // Upstream body may be binary (e.g. PriceFull*.gz). If we return it as
+    // a plain string via response.text(), API Gateway UTF-8 decodes it and
+    // corrupts the binary (0x8b → \uFFFD etc.). Safe path: always read as
+    // ArrayBuffer, base64-encode, and set isBase64Encoded=true so API
+    // Gateway re-decodes to raw bytes on the way back to the caller.
+    const buf = Buffer.from(await upstream.arrayBuffer());
     return {
       statusCode: upstream.status,
-      headers: { "Content-Type": upstream.headers.get("content-type") ?? "application/json" },
-      body: text,
+      headers: { "Content-Type": upstream.headers.get("content-type") ?? "application/octet-stream" },
+      body: buf.toString("base64"),
+      isBase64Encoded: true,
     };
   } catch (err) {
     return respond(502, {

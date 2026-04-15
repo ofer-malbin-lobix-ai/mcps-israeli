@@ -22,6 +22,15 @@ const CACHE_TTL_HTML_MS = 10 * 60_000;        // 10 min for file listings
 const CACHE_TTL_XML_MS = 2 * 60 * 60_000;     // 2 h for PriceFull XMLs
 const CACHE_MAX_ENTRIES = 20;
 
+// Optional IL-egress proxy (AWS il-central-1 Lambda). When configured AND the
+// URL's hostname is in PROXY_HOSTS, the fetch is forwarded through the proxy
+// so the outbound IP is from Tel Aviv instead of Railway's Singapore region.
+// Only origins that block Railway IPs (Cloudflare WAF on Carrefour) go through
+// it — Shufersal's Azure CDN etc. continue to fetch direct.
+const IL_PROXY_URL = process.env.IL_PROXY_URL;
+const IL_PROXY_KEY = process.env.IL_PROXY_KEY;
+const PROXY_HOSTS = new Set(["prices.carrefour.co.il"]);
+
 let lastRequestTime = 0;
 
 interface CacheEntry {
@@ -139,6 +148,36 @@ function decodeBody(url: string, bytes: Buffer): { text: string; gz: boolean } {
   }
 }
 
+/** Decide whether this URL should be forwarded through the IL proxy. */
+function shouldUseProxy(url: string): boolean {
+  if (!IL_PROXY_URL || !IL_PROXY_KEY) return false;
+  try {
+    return PROXY_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch via AWS IL Lambda proxy (forward upstream URL + headers). */
+async function fetchViaProxy(url: string, acceptHeader: string): Promise<Response> {
+  return fetch(IL_PROXY_URL!, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": IL_PROXY_KEY!,
+    },
+    body: JSON.stringify({
+      url,
+      method: "GET",
+      headers: {
+        Accept: acceptHeader,
+        "Accept-Encoding": "gzip",
+      },
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS + 5_000),
+  });
+}
+
 async function fetchAndDecode(url: string, acceptHeader: string): Promise<string> {
   const cached = cacheGet(url);
   if (cached !== undefined) {
@@ -146,10 +185,11 @@ async function fetchAndDecode(url: string, acceptHeader: string): Promise<string
     return cached;
   }
 
+  const viaProxy = shouldUseProxy(url);
   const start = Date.now();
-  const response = await fetchWithRateLimit(url, {
-    headers: { Accept: acceptHeader },
-  });
+  const response = viaProxy
+    ? await fetchViaProxy(url, acceptHeader)
+    : await fetchWithRateLimit(url, { headers: { Accept: acceptHeader } });
 
   if (!response.ok) {
     const dt = Date.now() - start;
@@ -170,7 +210,7 @@ async function fetchAndDecode(url: string, acceptHeader: string): Promise<string
 
   const dt = Date.now() - start;
   console.error(
-    `[fetch] url=${url.slice(0, 80)} dt=${dt}ms size=${text.length} status=${response.status}${gz ? " gz" : ""}`
+    `[fetch] url=${url.slice(0, 80)} dt=${dt}ms size=${text.length} status=${response.status}${gz ? " gz" : ""}${viaProxy ? " proxy" : ""}`
   );
 
   cachePut(url, text, ttlForUrl(url));
