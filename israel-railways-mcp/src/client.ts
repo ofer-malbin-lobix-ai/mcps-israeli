@@ -65,6 +65,12 @@ async function railRequest<T>(
       "Content-Type": "application/json",
       "ocp-apim-subscription-key": API_KEY,
       "User-Agent": USER_AGENT,
+      // rail-api.rail.co.il's WAF rejects requests that don't look like they
+      // originated from the official site. Without these, every request from
+      // a datacenter ASN (e.g. Railway) returns 403 Forbidden even with a
+      // valid subscription key.
+      Referer: "https://www.rail.co.il/",
+      Origin: "https://www.rail.co.il",
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
