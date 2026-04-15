@@ -29,6 +29,7 @@ const PROXY_KEY = process.env.PROXY_KEY;
 const ALLOWLIST = new Set([
   "rail-api.rail.co.il",
   "prices.carrefour.co.il",
+  "datawisetst.tase.co.il",
 ]);
 
 const DEFAULT_HEADERS = {

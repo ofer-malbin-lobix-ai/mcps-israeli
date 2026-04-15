@@ -10,6 +10,14 @@
 // Update if TASE publishes a different production URL.
 const BASE_URL = "https://datawisetst.tase.co.il";
 
+// Optional AWS il-central-1 egress proxy. datawisetst.tase.co.il is Incapsula-
+// protected and returns 403 to cloud datacenter IPs (e.g. Railway Singapore).
+// When the proxy env vars are set AND the URL hostname matches PROXY_HOSTS,
+// the request is forwarded through the Lambda so its outbound IP is Tel Aviv.
+const IL_PROXY_URL = process.env.IL_PROXY_URL;
+const IL_PROXY_KEY = process.env.IL_PROXY_KEY;
+const PROXY_HOSTS = new Set(["datawisetst.tase.co.il"]);
+
 // Simple sliding window rate limiter: max 5 requests per second (conservative; official limit is 10/2s)
 const MAX_REQUESTS = 5;
 const WINDOW_MS = 1000;
@@ -66,16 +74,34 @@ async function get(
     }
   }
 
+  const upstreamUrl = url.toString();
+  const upstreamHeaders: Record<string, string> = {
+    accept: "application/json",
+    "accept-language": lang,
+    apikey: apiKey,
+  };
+  const viaProxy =
+    IL_PROXY_URL && IL_PROXY_KEY && PROXY_HOSTS.has(new URL(upstreamUrl).hostname);
+
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        "accept-language": lang,
-        apikey: apiKey,
-      },
-    });
+    response = viaProxy
+      ? await fetch(IL_PROXY_URL!, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": IL_PROXY_KEY!,
+          },
+          body: JSON.stringify({
+            url: upstreamUrl,
+            method: "GET",
+            headers: upstreamHeaders,
+          }),
+        })
+      : await fetch(upstreamUrl, {
+          method: "GET",
+          headers: upstreamHeaders,
+        });
   } catch (err) {
     return {
       ok: false,
