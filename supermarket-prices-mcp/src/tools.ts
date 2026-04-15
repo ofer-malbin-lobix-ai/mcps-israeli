@@ -510,6 +510,150 @@ function parsePublishPriceFileList(
 }
 
 // ---------------------------------------------------------------------------
+// Shared helpers used by find_product and compare_basket
+// ---------------------------------------------------------------------------
+
+export interface Match {
+  chainName: string;
+  itemName: string;
+  itemCode: string;
+  price: number;
+  unitPrice?: string;
+  manufacturer?: string;
+  updatedAt?: string;
+}
+
+export type ChainItemsResult =
+  | { items: Record<string, string>[]; updatedAt: string; chainName: string }
+  | { error: string; chainKey: string };
+
+/** Fetch and parse the newest PriceFull (or largest, for per-store FTP chains). */
+export async function fetchChainItems(chainKey: string): Promise<ChainItemsResult> {
+  const info = CHAINS[chainKey];
+  if (!info) return { error: `unknown chain: ${chainKey}`, chainKey };
+
+  // Kaggle-backed chains don't have raw XML items; callers should use the
+  // kaggle lookup helpers directly instead of calling fetchChainItems.
+  if (info.dataSource === "kaggle") {
+    return { error: `${info.nameEn} is Kaggle-backed; use kaggle lookup helpers`, chainKey };
+  }
+
+  let updatedAt = "unknown";
+  let xml = "";
+
+  if (info.dataSource === "ftp") {
+    const ftpFiles = await listFtpFiles(info.endpoint, info.ftpSecure ?? false);
+    const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
+    if (!pf) return { error: `no PriceFull files on FTP for ${info.nameEn}`, chainKey };
+    updatedAt = pf.date;
+    xml = await fetchFtpXml(info.endpoint, pf.name, info.ftpSecure ?? false);
+  } else {
+    let entries: ShufersalFileEntry[] = [];
+    if (info.dataSource === "web") {
+      const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
+      const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
+      const html = await fetchText(url);
+      entries = parseShufersalFileList(html);
+    } else if (info.dataSource === "publishprice") {
+      const html = await fetchText(info.endpoint);
+      entries = parsePublishPriceFileList(html, info.endpoint);
+      entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+    }
+    if (entries.length === 0) return { error: `no PriceFull files found for ${info.nameEn}`, chainKey };
+    updatedAt = entries[0].date;
+    xml = await fetchXml(entries[0].url);
+  }
+
+  const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
+  return { items, updatedAt, chainName: info.nameEn };
+}
+
+export function itemToMatch(it: Record<string, string>, chainName: string, updatedAt: string): Match | undefined {
+  const price = Number(it["ItemPrice"] ?? "");
+  if (!Number.isFinite(price) || price <= 0) return undefined;
+  return {
+    chainName,
+    itemName: it["ItemName"] ?? "",
+    itemCode: it["ItemCode"] ?? "",
+    price,
+    unitPrice: it["UnitOfMeasurePrice"],
+    manufacturer: it["ManufacturerName"],
+    updatedAt,
+  };
+}
+
+export function kaggleToMatch(k: Awaited<ReturnType<typeof kaggleLookupByBarcode>>, chainName: string): Match | undefined {
+  if (!k) return undefined;
+  return {
+    chainName,
+    itemName: k.itemName,
+    itemCode: k.itemCode,
+    price: k.price,
+    unitPrice: k.unitPrice,
+    manufacturer: k.manufacturer,
+    updatedAt: k.updatedAt,
+  };
+}
+
+export async function searchByName(chainKey: string, needle: string, limit: number): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+  const info = CHAINS[chainKey];
+  if (info?.dataSource === "kaggle") {
+    try {
+      const rows = await kaggleLookupByName(chainKey, needle, limit);
+      return {
+        chainKey,
+        matches: rows.map((r) => kaggleToMatch(r, info.nameEn)!).filter(Boolean),
+      };
+    } catch (err) {
+      return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  try {
+    const r = await fetchChainItems(chainKey);
+    if ("error" in r) return { chainKey, matches: [], error: r.error };
+    const out: Match[] = [];
+    const needleLc = needle.toLowerCase();
+    for (const it of r.items) {
+      const name = (it["ItemName"] ?? "").toLowerCase();
+      if (!name.includes(needleLc)) continue;
+      const m = itemToMatch(it, r.chainName, r.updatedAt);
+      if (m) out.push(m);
+    }
+    out.sort((a, b) => a.price - b.price);
+    return { chainKey, matches: out.slice(0, limit) };
+  } catch (err) {
+    return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function searchByBarcode(chainKey: string, barcode: string, limit: number): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+  const info = CHAINS[chainKey];
+  if (info?.dataSource === "kaggle") {
+    try {
+      const k = await kaggleLookupByBarcode(chainKey, barcode);
+      const m = kaggleToMatch(k, info.nameEn);
+      return { chainKey, matches: m ? [m] : [] };
+    } catch (err) {
+      return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  try {
+    const r = await fetchChainItems(chainKey);
+    if ("error" in r) return { chainKey, matches: [], error: r.error };
+    const out: Match[] = [];
+    for (const it of r.items) {
+      if ((it["ItemCode"] ?? "") !== barcode) continue;
+      const m = itemToMatch(it, r.chainName, r.updatedAt);
+      if (m) out.push(m);
+    }
+    out.sort((a, b) => a.price - b.price);
+    return { chainKey, matches: out.slice(0, limit) };
+  } catch (err) {
+    return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tool registration
 // ---------------------------------------------------------------------------
 
@@ -1456,143 +1600,14 @@ export function registerTools(server: McpServer): void {
       const isBarcode = /^\d{7,}$/.test(query.trim());
       const needle = query.trim().toLowerCase();
 
-      interface Match {
-        chainName: string;
-        itemName: string;
-        itemCode: string;
-        price: number;
-        unitPrice?: string;
-        manufacturer?: string;
-        updatedAt?: string;
-      }
-
-      /** Fetch and parse the newest PriceFull (or largest, for per-store FTP chains). */
-      async function fetchChainItems(chainKey: string): Promise<{ items: Record<string, string>[]; updatedAt: string; chainName: string } | { error: string; chainKey: string }> {
-        const info = CHAINS[chainKey];
-        if (!info) return { error: `unknown chain: ${chainKey}`, chainKey };
-
-        let updatedAt = "unknown";
-        let xml = "";
-
-        if (info.dataSource === "ftp") {
-          const ftpFiles = await listFtpFiles(info.endpoint, info.ftpSecure ?? false);
-          const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
-          if (!pf) return { error: `no PriceFull files on FTP for ${info.nameEn}`, chainKey };
-          updatedAt = pf.date;
-          xml = await fetchFtpXml(info.endpoint, pf.name, info.ftpSecure ?? false);
-        } else {
-          let entries: ShufersalFileEntry[] = [];
-          if (info.dataSource === "web") {
-            const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
-            const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
-            const html = await fetchText(url);
-            entries = parseShufersalFileList(html);
-          } else if (info.dataSource === "publishprice") {
-            const html = await fetchText(info.endpoint);
-            entries = parsePublishPriceFileList(html, info.endpoint);
-            entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
-          }
-          if (entries.length === 0) return { error: `no PriceFull files found for ${info.nameEn}`, chainKey };
-          updatedAt = entries[0].date;
-          xml = await fetchXml(entries[0].url);
-        }
-
-        const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
-        return { items, updatedAt, chainName: info.nameEn };
-      }
-
-      function itemToMatch(it: Record<string, string>, chainName: string, updatedAt: string): Match | undefined {
-        const price = Number(it["ItemPrice"] ?? "");
-        if (!Number.isFinite(price) || price <= 0) return undefined;
-        return {
-          chainName,
-          itemName: it["ItemName"] ?? "",
-          itemCode: it["ItemCode"] ?? "",
-          price,
-          unitPrice: it["UnitOfMeasurePrice"],
-          manufacturer: it["ManufacturerName"],
-          updatedAt,
-        };
-      }
-
-      function kaggleToMatch(k: Awaited<ReturnType<typeof kaggleLookupByBarcode>>, chainName: string): Match | undefined {
-        if (!k) return undefined;
-        return {
-          chainName,
-          itemName: k.itemName,
-          itemCode: k.itemCode,
-          price: k.price,
-          unitPrice: k.unitPrice,
-          manufacturer: k.manufacturer,
-          updatedAt: k.updatedAt,
-        };
-      }
-
-      async function searchByName(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
-        const info = CHAINS[chainKey];
-        if (info?.dataSource === "kaggle") {
-          try {
-            const rows = await kaggleLookupByName(chainKey, needle, limit);
-            return {
-              chainKey,
-              matches: rows.map((r) => kaggleToMatch(r, info.nameEn)!).filter(Boolean),
-            };
-          } catch (err) {
-            return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-          }
-        }
-        try {
-          const r = await fetchChainItems(chainKey);
-          if ("error" in r) return { chainKey, matches: [], error: r.error };
-          const out: Match[] = [];
-          for (const it of r.items) {
-            const name = (it["ItemName"] ?? "").toLowerCase();
-            if (!name.includes(needle)) continue;
-            const m = itemToMatch(it, r.chainName, r.updatedAt);
-            if (m) out.push(m);
-          }
-          out.sort((a, b) => a.price - b.price);
-          return { chainKey, matches: out.slice(0, limit) };
-        } catch (err) {
-          return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-        }
-      }
-
-      async function searchByBarcode(chainKey: string, barcode: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
-        const info = CHAINS[chainKey];
-        if (info?.dataSource === "kaggle") {
-          try {
-            const k = await kaggleLookupByBarcode(chainKey, barcode);
-            const m = kaggleToMatch(k, info.nameEn);
-            return { chainKey, matches: m ? [m] : [] };
-          } catch (err) {
-            return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-          }
-        }
-        try {
-          const r = await fetchChainItems(chainKey);
-          if ("error" in r) return { chainKey, matches: [], error: r.error };
-          const out: Match[] = [];
-          for (const it of r.items) {
-            if ((it["ItemCode"] ?? "") !== barcode) continue;
-            const m = itemToMatch(it, r.chainName, r.updatedAt);
-            if (m) out.push(m);
-          }
-          out.sort((a, b) => a.price - b.price);
-          return { chainKey, matches: out.slice(0, limit) };
-        } catch (err) {
-          return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-        }
-      }
-
       // Main flow: barcode-pivot for name queries, direct barcode for numeric queries.
       let results: { chainKey: string; matches: Match[]; error?: string }[] = [];
       if (isBarcode) {
-        results = await Promise.all(targets.map((c) => searchByBarcode(c, query.trim())));
+        results = await Promise.all(targets.map((c) => searchByBarcode(c, query.trim(), limit)));
       } else {
         // Phase A: resolve barcode from Shufersal (best name completeness).
         const pivotChain = targets.find((c) => c === "shufersal") ?? targets[0];
-        const pivot = await searchByName(pivotChain);
+        const pivot = await searchByName(pivotChain, needle, limit);
         const pivotBarcode = pivot.matches[0]?.itemCode;
 
         if (pivotBarcode) {
@@ -1602,15 +1617,15 @@ export function registerTools(server: McpServer): void {
           const others = targets.filter((c) => c !== pivotChain);
           const byBarcode = await Promise.all(
             others.map(async (c) => {
-              const r = await searchByBarcode(c, pivotBarcode);
+              const r = await searchByBarcode(c, pivotBarcode, limit);
               if (r.matches.length > 0 || r.error) return r;
-              return searchByName(c);
+              return searchByName(c, needle, limit);
             })
           );
           results = [pivot, ...byBarcode];
         } else {
           // Fallback: name substring across all chains (legacy behavior).
-          results = await Promise.all(targets.map(searchByName));
+          results = await Promise.all(targets.map((c) => searchByName(c, needle, limit)));
         }
       }
 
@@ -1646,6 +1661,233 @@ export function registerTools(server: McpServer): void {
       return {
         content: [{ type: "text", text: lines.join("\n") }],
       };
+    }
+  );
+
+  // =========================================================================
+  // 9. compare_basket -- basket-level price comparison across chains
+  // =========================================================================
+  server.tool(
+    "compare_basket",
+    "Compare a shopping basket (multiple products) across chains. Resolves each item to a barcode (via Shufersal for name queries), then looks up that barcode in every chain and sums price × quantity. Returns per-chain totals sorted cheapest first, plus a 'cheapest per item' breakdown for split-shopping. Uses the same cached files as find_product so a 5-item basket takes about the same time as a single find_product call.",
+    {
+      items: z
+        .array(z.string().min(2))
+        .min(1)
+        .max(20)
+        .describe("Basket items. Each entry is either a product name (Hebrew OK) or a barcode (7+ digits). 1-20 items."),
+      chains: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Chain keys to compare. Defaults to the same 8 as find_product: shufersal, rami_levy, yohananof, osher_ad, tiv_taam, keshet, dor_alon, yeinot_bitan."
+        ),
+      quantities: z
+        .array(z.number().int().positive().max(99))
+        .optional()
+        .describe("Optional quantity per item (matches items[] by index). Default 1 for each."),
+    },
+    {
+      title: "Compare Shopping Basket",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async ({ items, chains, quantities }) => {
+      const targets = chains ?? [
+        "shufersal",
+        "rami_levy",
+        "yohananof",
+        "osher_ad",
+        "tiv_taam",
+        "keshet",
+        "dor_alon",
+        "yeinot_bitan",
+      ];
+      const qtys = items.map((_, i) => quantities?.[i] ?? 1);
+
+      // Resolve each item → barcode via Shufersal name search (for name queries).
+      interface Resolved {
+        original: string;
+        barcode: string | null;
+        label: string; // human-readable product name for output (Shufersal name if resolved)
+      }
+      const resolved: Resolved[] = await Promise.all(
+        items.map(async (raw) => {
+          const q = raw.trim();
+          if (/^\d{7,}$/.test(q)) return { original: raw, barcode: q, label: q };
+          const hit = await searchByName("shufersal", q.toLowerCase(), 1);
+          const m = hit.matches[0];
+          return {
+            original: raw,
+            barcode: m?.itemCode ?? null,
+            label: m?.itemName ?? raw,
+          };
+        })
+      );
+
+      // For each chain, fetch items ONCE and look up every resolved barcode.
+      interface ChainBasket {
+        chainKey: string;
+        chainName: string;
+        total: number;
+        matched: number;
+        missing: number[]; // indices into items[]
+        perItem: (Match | undefined)[]; // aligned with items[]
+        error?: string;
+      }
+
+      async function basketForChain(chainKey: string): Promise<ChainBasket> {
+        const info = CHAINS[chainKey];
+        if (!info) {
+          return {
+            chainKey,
+            chainName: chainKey,
+            total: 0,
+            matched: 0,
+            missing: items.map((_, i) => i),
+            perItem: items.map(() => undefined),
+            error: `unknown chain`,
+          };
+        }
+
+        const perItem: (Match | undefined)[] = new Array(items.length).fill(undefined);
+        const missing: number[] = [];
+        let total = 0;
+        let matched = 0;
+        let lastError: string | undefined;
+
+        if (info.dataSource === "kaggle") {
+          for (let i = 0; i < resolved.length; i++) {
+            const bc = resolved[i].barcode;
+            if (!bc) { missing.push(i); continue; }
+            try {
+              const k = await kaggleLookupByBarcode(chainKey, bc);
+              const m = kaggleToMatch(k, info.nameEn);
+              if (m) {
+                perItem[i] = m;
+                total += m.price * qtys[i];
+                matched++;
+              } else {
+                missing.push(i);
+              }
+            } catch (err) {
+              lastError = err instanceof Error ? err.message : String(err);
+              missing.push(i);
+            }
+          }
+        } else {
+          const r = await fetchChainItems(chainKey);
+          if ("error" in r) {
+            return {
+              chainKey,
+              chainName: info.nameEn,
+              total: 0,
+              matched: 0,
+              missing: items.map((_, i) => i),
+              perItem,
+              error: r.error,
+            };
+          }
+          // Index items by ItemCode once for O(1) per-barcode lookup.
+          const byCode = new Map<string, Record<string, string>>();
+          for (const it of r.items) byCode.set(it["ItemCode"] ?? "", it);
+          for (let i = 0; i < resolved.length; i++) {
+            const bc = resolved[i].barcode;
+            if (!bc) { missing.push(i); continue; }
+            const it = byCode.get(bc);
+            const m = it ? itemToMatch(it, r.chainName, r.updatedAt) : undefined;
+            if (m) {
+              perItem[i] = m;
+              total += m.price * qtys[i];
+              matched++;
+            } else {
+              missing.push(i);
+            }
+          }
+        }
+
+        return {
+          chainKey,
+          chainName: info.nameEn,
+          total,
+          matched,
+          missing,
+          perItem,
+          error: lastError,
+        };
+      }
+
+      const baskets = await Promise.all(targets.map(basketForChain));
+
+      // Sort by completeness first, then total price ascending.
+      const scored = baskets
+        .filter((b) => b.matched > 0)
+        .sort((a, b) => {
+          if (b.matched !== a.matched) return b.matched - a.matched;
+          return a.total - b.total;
+        });
+
+      // Build output.
+      const out: string[] = [];
+      out.push(`Basket comparison (${items.length} item${items.length > 1 ? "s" : ""}, ${targets.length} chains)`);
+      out.push("=".repeat(50));
+      out.push("");
+
+      if (scored.length === 0) {
+        out.push("No chain had any matches for this basket.");
+      } else {
+        scored.forEach((b, idx) => {
+          const miss = b.missing.length > 0 ? `  ⚠ missing: ${b.missing.map((i) => resolved[i].label.slice(0, 30)).join(", ")}` : "";
+          out.push(`${idx + 1}. ${b.chainName} — total ₪${b.total.toFixed(2)} (${b.matched}/${items.length} items)${miss}`);
+          for (let i = 0; i < items.length; i++) {
+            const m = b.perItem[i];
+            const qtyStr = qtys[i] > 1 ? `×${qtys[i]}` : "  ";
+            if (m) {
+              out.push(`   ${m.itemName.slice(0, 40).padEnd(40)} ${qtyStr}  ₪${(m.price * qtys[i]).toFixed(2)}`);
+            } else {
+              out.push(`   ${resolved[i].label.slice(0, 40).padEnd(40)} ${qtyStr}  —`);
+            }
+          }
+          out.push("");
+        });
+
+        // Per-item cheapest across all chains (split shopping).
+        out.push("Cheapest per item (split shopping)");
+        out.push("-".repeat(40));
+        let splitTotal = 0;
+        for (let i = 0; i < items.length; i++) {
+          let bestPrice = Infinity;
+          let bestChain = "";
+          let bestName = resolved[i].label;
+          for (const b of baskets) {
+            const m = b.perItem[i];
+            if (m && m.price < bestPrice) {
+              bestPrice = m.price;
+              bestChain = b.chainName;
+              bestName = m.itemName;
+            }
+          }
+          if (Number.isFinite(bestPrice)) {
+            out.push(`- ${bestName.slice(0, 32).padEnd(32)} → ${bestChain} ×${qtys[i]} ₪${(bestPrice * qtys[i]).toFixed(2)}`);
+            splitTotal += bestPrice * qtys[i];
+          } else {
+            out.push(`- ${resolved[i].label.slice(0, 32).padEnd(32)} → (not found in any chain)`);
+          }
+        }
+        out.push(`Total if you split: ₪${splitTotal.toFixed(2)}`);
+      }
+
+      const failures = baskets.filter((b) => b.error).map((b) => `${b.chainKey}: ${b.error}`);
+      if (failures.length > 0) {
+        out.push("");
+        out.push("---");
+        out.push("Partial failures:");
+        for (const f of failures) out.push(`  ${f}`);
+      }
+
+      return { content: [{ type: "text", text: out.join("\n") }] };
     }
   );
 
