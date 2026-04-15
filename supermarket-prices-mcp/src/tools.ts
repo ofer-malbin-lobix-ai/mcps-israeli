@@ -8,6 +8,7 @@ import {
   extractHtmlBlocks,
   stripTags,
 } from "./client.js";
+import { listFtpFiles, fetchFtpXml } from "./ftp-client.js";
 
 // ---------------------------------------------------------------------------
 // URL validation -- restrict to known Israeli supermarket price domains (SSRF prevention)
@@ -63,7 +64,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Rami Levy",
     dataSource: "ftp",
     endpoint: "RamiLevi",
-    directAccess: false,
+    directAccess: true,
   },
   yeinot_bitan: {
     id: "7290055700007",
@@ -78,8 +79,8 @@ const CHAINS: Record<string, ChainInfo> = {
     nameHe: "אושר עד",
     nameEn: "Osher Ad",
     dataSource: "ftp",
-    endpoint: "osherad",
-    directAccess: false,
+    endpoint: "OsherAd",
+    directAccess: true,
   },
   victory: {
     id: "7290696200003",
@@ -87,7 +88,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Victory",
     dataSource: "ftp",
     endpoint: "Victory",
-    directAccess: false,
+    directAccess: true,
   },
   tiv_taam: {
     id: "7290873255550",
@@ -95,7 +96,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Tiv Taam",
     dataSource: "ftp",
     endpoint: "TivTaam",
-    directAccess: false,
+    directAccess: true,
   },
   hazi_hinam: {
     id: "7290700100008",
@@ -103,7 +104,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Hazi Hinam",
     dataSource: "ftp",
     endpoint: "HaziHinam",
-    directAccess: false,
+    directAccess: true,
   },
   yohananof: {
     id: "7290803800003",
@@ -111,7 +112,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Yohananof",
     dataSource: "ftp",
     endpoint: "yohananof",
-    directAccess: false,
+    directAccess: true,
   },
   mega: {
     id: "7290055700014",
@@ -119,7 +120,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Mega",
     dataSource: "ftp",
     endpoint: "Mega",
-    directAccess: false,
+    directAccess: true,
   },
   dor_alon: {
     id: "7290492000005",
@@ -127,7 +128,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Dor Alon",
     dataSource: "ftp",
     endpoint: "doralon",
-    directAccess: false,
+    directAccess: true,
   },
   bareket: {
     id: "7290875100003",
@@ -135,7 +136,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Bareket",
     dataSource: "ftp",
     endpoint: "Bareket",
-    directAccess: false,
+    directAccess: true,
   },
   mahsani_ashuk: {
     id: "7290661400001",
@@ -143,7 +144,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Mahsani A'Shuk",
     dataSource: "ftp",
     endpoint: "MahsaniAShuk",
-    directAccess: false,
+    directAccess: true,
   },
   zol_vebegadol: {
     id: "7290058173198",
@@ -151,7 +152,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Zol VeBegadol",
     dataSource: "ftp",
     endpoint: "ZolVeBegadol",
-    directAccess: false,
+    directAccess: true,
   },
   super_pharm: {
     id: "7290172900007",
@@ -159,7 +160,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Super-Pharm",
     dataSource: "ftp",
     endpoint: "SuperPharm",
-    directAccess: false,
+    directAccess: true,
   },
   king_store: {
     id: "7290058108879",
@@ -167,7 +168,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "King Store",
     dataSource: "ftp",
     endpoint: "KingStore",
-    directAccess: false,
+    directAccess: true,
   },
   stop_market: {
     id: "7290639000004",
@@ -175,7 +176,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Stop Market",
     dataSource: "ftp",
     endpoint: "StopMarket",
-    directAccess: false,
+    directAccess: true,
   },
   polizer: {
     id: "7291059100008",
@@ -183,7 +184,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Polizer",
     dataSource: "ftp",
     endpoint: "polizer",
-    directAccess: false,
+    directAccess: true,
   },
   good_pharm: {
     id: "7290058197699",
@@ -191,7 +192,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Good Pharm",
     dataSource: "ftp",
     endpoint: "GoodPharm",
-    directAccess: false,
+    directAccess: true,
   },
   keshet: {
     id: "7290785400000",
@@ -199,7 +200,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Keshet Taamim",
     dataSource: "ftp",
     endpoint: "Keshet",
-    directAccess: false,
+    directAccess: true,
   },
   cofix: {
     id: "7291056200008",
@@ -207,7 +208,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Cofix",
     dataSource: "ftp",
     endpoint: "Cofix",
-    directAccess: false,
+    directAccess: true,
   },
   het_cohen: {
     id: "7290700100015",
@@ -215,7 +216,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Het Cohen",
     dataSource: "ftp",
     endpoint: "HetCohen",
-    directAccess: false,
+    directAccess: true,
   },
   salach_dabach: {
     id: "7290526500006",
@@ -223,7 +224,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Salach D'abach",
     dataSource: "ftp",
     endpoint: "SalachDabach",
-    directAccess: false,
+    directAccess: true,
   },
   super_yuda: {
     id: "7290058148776",
@@ -231,7 +232,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Super Yuda",
     dataSource: "ftp",
     endpoint: "SuperYuda",
-    directAccess: false,
+    directAccess: true,
   },
   super_sapir: {
     id: "7290058156607",
@@ -239,7 +240,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Super Sapir",
     dataSource: "ftp",
     endpoint: "SuperSapir",
-    directAccess: false,
+    directAccess: true,
   },
   quik: {
     id: "7290058169201",
@@ -247,7 +248,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Quik",
     dataSource: "ftp",
     endpoint: "Quik",
-    directAccess: false,
+    directAccess: true,
   },
   maayan_2000: {
     id: "7290058159628",
@@ -255,7 +256,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Maayan 2000",
     dataSource: "ftp",
     endpoint: "Maayan2000",
-    directAccess: false,
+    directAccess: true,
   },
   netiv_hased: {
     id: "7290058177776",
@@ -263,7 +264,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Netiv HaHesed",
     dataSource: "ftp",
     endpoint: "NetivHased",
-    directAccess: false,
+    directAccess: true,
   },
   shefa_barcart_ashem: {
     id: "7290058134977",
@@ -271,7 +272,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Shefa Birkat Hashem",
     dataSource: "ftp",
     endpoint: "ShefaBarcartAshem",
-    directAccess: false,
+    directAccess: true,
   },
   shuk_ahir: {
     id: "7290058177998",
@@ -279,7 +280,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Shuk Ha'Ir",
     dataSource: "ftp",
     endpoint: "ShukAhir",
-    directAccess: false,
+    directAccess: true,
   },
   yellow: {
     id: "7290058194988",
@@ -287,7 +288,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Yellow",
     dataSource: "ftp",
     endpoint: "Yellow",
-    directAccess: false,
+    directAccess: true,
   },
   fresh_market: {
     id: "7290876100000",
@@ -295,7 +296,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Fresh Market / Super Dosh",
     dataSource: "ftp",
     endpoint: "FreshMarketAndSuperDosh",
-    directAccess: false,
+    directAccess: true,
   },
   meshnat_yosef: {
     id: "7290058189984",
@@ -303,7 +304,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Meshnat Yosef",
     dataSource: "ftp",
     endpoint: "MeshnatYosef",
-    directAccess: false,
+    directAccess: true,
   },
   wolt: {
     id: "7290058199068",
@@ -311,7 +312,7 @@ const CHAINS: Record<string, ChainInfo> = {
     nameEn: "Wolt",
     dataSource: "ftp",
     endpoint: "Wolt",
-    directAccess: false,
+    directAccess: true,
   },
 };
 
@@ -627,37 +628,28 @@ export function registerTools(server: McpServer): void {
         };
       }
 
-      if (!chainInfo.directAccess) {
-        const lines = [
-          `${chainInfo.nameEn} / ${chainInfo.nameHe} uses FTP-based data publishing.`,
-          "",
-          "This MCP cannot directly access FTP feeds. To access this chain's data:",
-          "",
-          "1. Use the OpenIsraeliSupermarkets Python scraper:",
-          "   pip install il-supermarket-scarper",
-          '   from il_supermarket_scarper import ScarpingTask',
-          '   ScarpingTask(dump_folder="output", only_latest=True,',
-          `       enabled_scrapers=["${chainInfo.endpoint}"]).start()`,
-          "",
-          "2. Or access the Kaggle dataset (updated daily):",
-          "   https://www.kaggle.com/datasets/erlichsefi/israeli-supermarkets-2024",
-          "",
-          `FTP host: url.retail.publishedprices.co.il`,
-          `FTP user: ${chainInfo.endpoint}`,
-          `FTP password: (empty)`,
-          "",
-          "The FTP contains .gz-compressed XML files with price, promo, and store data.",
-        ];
-
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-        };
-      }
-
       try {
         let entries: ShufersalFileEntry[] = [];
 
-        if (chainInfo.dataSource === "web") {
+        if (chainInfo.dataSource === "ftp") {
+          const ftpEntries = await listFtpFiles(chainInfo.endpoint);
+          const typeMap: Record<string, string> = {
+            prices: "price",
+            pricesfull: "pricefull",
+            promos: "promo",
+            promosfull: "promofull",
+            stores: "store",
+          };
+          const wanted = typeMap[file_type];
+          const filtered = wanted
+            ? ftpEntries.filter((e) => e.name.toLowerCase().includes(wanted))
+            : ftpEntries;
+          entries = filtered.map((e) => ({
+            name: e.name,
+            url: `ftp://url.retail.publishedprices.co.il/${e.name}`,
+            date: e.date,
+          }));
+        } else if (chainInfo.dataSource === "web") {
           // Shufersal-style web portal
           const catId = SHUFERSAL_FILE_TYPES[file_type] ?? "0";
           const url = `${chainInfo.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
@@ -1429,7 +1421,7 @@ export function registerTools(server: McpServer): void {
         .array(z.string())
         .optional()
         .describe(
-          "Chain keys to search. Defaults to ['shufersal','yeinot_bitan'] (the two web-accessible chains)."
+          "Chain keys to search. Defaults to ['shufersal','rami_levy','yohananof','osher_ad','victory'] (the most popular chains). Pass explicit keys to override. Use list_chains to see all ~35 chains."
         ),
       limit: z
         .number()
@@ -1447,7 +1439,7 @@ export function registerTools(server: McpServer): void {
       openWorldHint: true,
     },
     async ({ query, chains, limit }) => {
-      const targets = chains ?? ["shufersal", "yeinot_bitan"];
+      const targets = chains ?? ["shufersal", "rami_levy", "yohananof", "osher_ad", "victory"];
       const isBarcode = /^\d{7,}$/.test(query.trim());
       const needle = query.trim().toLowerCase();
 
@@ -1464,33 +1456,43 @@ export function registerTools(server: McpServer): void {
       async function searchChain(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
         const info = CHAINS[chainKey];
         if (!info) return { chainKey, matches: [], error: `unknown chain: ${chainKey}` };
-        if (!info.directAccess) {
-          return { chainKey, matches: [], error: `${info.nameEn} requires FTP access (not supported by this MCP)` };
-        }
 
         try {
           // 1. List files and pick the newest PriceFull
-          let entries: ShufersalFileEntry[] = [];
-          if (info.dataSource === "web") {
-            const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
-            const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
-            const html = await fetchText(url);
-            entries = parseShufersalFileList(html);
-          } else if (info.dataSource === "publishprice") {
-            const html = await fetchText(info.endpoint);
-            entries = parsePublishPriceFileList(html, info.endpoint);
-            entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+          let priceUrl = "";
+          let updatedAt = "unknown";
+          let xml = "";
+
+          if (info.dataSource === "ftp") {
+            const ftpFiles = await listFtpFiles(info.endpoint);
+            const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
+            if (!pf) {
+              return { chainKey, matches: [], error: `no PriceFull files on FTP for ${info.nameEn}` };
+            }
+            updatedAt = pf.date;
+            xml = await fetchFtpXml(info.endpoint, pf.name);
+          } else {
+            let entries: ShufersalFileEntry[] = [];
+            if (info.dataSource === "web") {
+              const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
+              const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
+              const html = await fetchText(url);
+              entries = parseShufersalFileList(html);
+            } else if (info.dataSource === "publishprice") {
+              const html = await fetchText(info.endpoint);
+              entries = parsePublishPriceFileList(html, info.endpoint);
+              entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+            }
+
+            if (entries.length === 0) {
+              return { chainKey, matches: [], error: `no PriceFull files found for ${info.nameEn}` };
+            }
+
+            priceUrl = entries[0].url;
+            updatedAt = entries[0].date;
+            xml = await fetchXml(priceUrl);
           }
 
-          if (entries.length === 0) {
-            return { chainKey, matches: [], error: `no PriceFull files found for ${info.nameEn}` };
-          }
-
-          const priceUrl = entries[0].url;
-          const updatedAt = entries[0].date;
-
-          // 2. Fetch + parse
-          const xml = await fetchXml(priceUrl);
           const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
 
           // 3. Filter
