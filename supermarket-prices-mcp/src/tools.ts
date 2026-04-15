@@ -9,6 +9,7 @@ import {
   stripTags,
 } from "./client.js";
 import { listFtpFiles, fetchFtpXml } from "./ftp-client.js";
+import { lookupByBarcode as kaggleLookupByBarcode, lookupByName as kaggleLookupByName } from "./kaggle-mirror.js";
 
 // ---------------------------------------------------------------------------
 // URL validation -- restrict to known Israeli supermarket price domains (SSRF prevention)
@@ -42,7 +43,7 @@ interface ChainInfo {
   id: string;
   nameHe: string;
   nameEn: string;
-  dataSource: "web" | "ftp" | "publishprice";
+  dataSource: "web" | "ftp" | "publishprice" | "kaggle";
   /** URL for web/publishprice sources, FTP username for ftp sources */
   endpoint: string;
   /** Whether this MCP can directly fetch price files from this chain */
@@ -72,8 +73,8 @@ const CHAINS: Record<string, ChainInfo> = {
     id: "7290055700007",
     nameHe: "יינות ביתן",
     nameEn: "Yeinot Bitan / Carrefour",
-    dataSource: "publishprice",
-    endpoint: "https://prices.carrefour.co.il/",
+    dataSource: "kaggle",
+    endpoint: "price_full_file_yayno_bitan_and_carrefour.csv",
     directAccess: true,
   },
   osher_ad: {
@@ -1450,6 +1451,7 @@ export function registerTools(server: McpServer): void {
         "tiv_taam",
         "keshet",
         "dor_alon",
+        "yeinot_bitan",
       ];
       const isBarcode = /^\d{7,}$/.test(query.trim());
       const needle = query.trim().toLowerCase();
@@ -1513,7 +1515,32 @@ export function registerTools(server: McpServer): void {
         };
       }
 
+      function kaggleToMatch(k: Awaited<ReturnType<typeof kaggleLookupByBarcode>>, chainName: string): Match | undefined {
+        if (!k) return undefined;
+        return {
+          chainName,
+          itemName: k.itemName,
+          itemCode: k.itemCode,
+          price: k.price,
+          unitPrice: k.unitPrice,
+          manufacturer: k.manufacturer,
+          updatedAt: k.updatedAt,
+        };
+      }
+
       async function searchByName(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+        const info = CHAINS[chainKey];
+        if (info?.dataSource === "kaggle") {
+          try {
+            const rows = await kaggleLookupByName(chainKey, needle, limit);
+            return {
+              chainKey,
+              matches: rows.map((r) => kaggleToMatch(r, info.nameEn)!).filter(Boolean),
+            };
+          } catch (err) {
+            return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+          }
+        }
         try {
           const r = await fetchChainItems(chainKey);
           if ("error" in r) return { chainKey, matches: [], error: r.error };
@@ -1532,6 +1559,16 @@ export function registerTools(server: McpServer): void {
       }
 
       async function searchByBarcode(chainKey: string, barcode: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+        const info = CHAINS[chainKey];
+        if (info?.dataSource === "kaggle") {
+          try {
+            const k = await kaggleLookupByBarcode(chainKey, barcode);
+            const m = kaggleToMatch(k, info.nameEn);
+            return { chainKey, matches: m ? [m] : [] };
+          } catch (err) {
+            return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+          }
+        }
         try {
           const r = await fetchChainItems(chainKey);
           if ("error" in r) return { chainKey, matches: [], error: r.error };
