@@ -1453,80 +1453,118 @@ export function registerTools(server: McpServer): void {
         updatedAt?: string;
       }
 
-      async function searchChain(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+      /** Fetch and parse the newest PriceFull (or largest, for per-store FTP chains). */
+      async function fetchChainItems(chainKey: string): Promise<{ items: Record<string, string>[]; updatedAt: string; chainName: string } | { error: string; chainKey: string }> {
         const info = CHAINS[chainKey];
-        if (!info) return { chainKey, matches: [], error: `unknown chain: ${chainKey}` };
+        if (!info) return { error: `unknown chain: ${chainKey}`, chainKey };
 
+        let updatedAt = "unknown";
+        let xml = "";
+
+        if (info.dataSource === "ftp") {
+          const ftpFiles = await listFtpFiles(info.endpoint);
+          const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
+          if (!pf) return { error: `no PriceFull files on FTP for ${info.nameEn}`, chainKey };
+          updatedAt = pf.date;
+          xml = await fetchFtpXml(info.endpoint, pf.name);
+        } else {
+          let entries: ShufersalFileEntry[] = [];
+          if (info.dataSource === "web") {
+            const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
+            const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
+            const html = await fetchText(url);
+            entries = parseShufersalFileList(html);
+          } else if (info.dataSource === "publishprice") {
+            const html = await fetchText(info.endpoint);
+            entries = parsePublishPriceFileList(html, info.endpoint);
+            entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
+          }
+          if (entries.length === 0) return { error: `no PriceFull files found for ${info.nameEn}`, chainKey };
+          updatedAt = entries[0].date;
+          xml = await fetchXml(entries[0].url);
+        }
+
+        const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
+        return { items, updatedAt, chainName: info.nameEn };
+      }
+
+      function itemToMatch(it: Record<string, string>, chainName: string, updatedAt: string): Match | undefined {
+        const price = Number(it["ItemPrice"] ?? "");
+        if (!Number.isFinite(price) || price <= 0) return undefined;
+        return {
+          chainName,
+          itemName: it["ItemName"] ?? "",
+          itemCode: it["ItemCode"] ?? "",
+          price,
+          unitPrice: it["UnitOfMeasurePrice"],
+          manufacturer: it["ManufacturerName"],
+          updatedAt,
+        };
+      }
+
+      async function searchByName(chainKey: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
         try {
-          // 1. List files and pick the newest PriceFull
-          let priceUrl = "";
-          let updatedAt = "unknown";
-          let xml = "";
-
-          if (info.dataSource === "ftp") {
-            const ftpFiles = await listFtpFiles(info.endpoint);
-            const pf = ftpFiles.find((f) => f.name.toLowerCase().includes("pricefull"));
-            if (!pf) {
-              return { chainKey, matches: [], error: `no PriceFull files on FTP for ${info.nameEn}` };
-            }
-            updatedAt = pf.date;
-            xml = await fetchFtpXml(info.endpoint, pf.name);
-          } else {
-            let entries: ShufersalFileEntry[] = [];
-            if (info.dataSource === "web") {
-              const catId = SHUFERSAL_FILE_TYPES["pricesfull"] ?? "2";
-              const url = `${info.endpoint}FileObject/UpdateCategory?catID=${catId}&storeId=0&sort=Time&sortdir=DESC`;
-              const html = await fetchText(url);
-              entries = parseShufersalFileList(html);
-            } else if (info.dataSource === "publishprice") {
-              const html = await fetchText(info.endpoint);
-              entries = parsePublishPriceFileList(html, info.endpoint);
-              entries = entries.filter((e) => e.name.toLowerCase().includes("pricefull"));
-            }
-
-            if (entries.length === 0) {
-              return { chainKey, matches: [], error: `no PriceFull files found for ${info.nameEn}` };
-            }
-
-            priceUrl = entries[0].url;
-            updatedAt = entries[0].date;
-            xml = await fetchXml(priceUrl);
+          const r = await fetchChainItems(chainKey);
+          if ("error" in r) return { chainKey, matches: [], error: r.error };
+          const out: Match[] = [];
+          for (const it of r.items) {
+            const name = (it["ItemName"] ?? "").toLowerCase();
+            if (!name.includes(needle)) continue;
+            const m = itemToMatch(it, r.chainName, r.updatedAt);
+            if (m) out.push(m);
           }
-
-          const items = extractXmlBlocks(xml, "Item", PRICE_ITEM_FIELDS);
-
-          // 3. Filter
-          const filtered: Match[] = [];
-          for (const it of items) {
-            const code = it["ItemCode"] ?? "";
-            const name = it["ItemName"] ?? "";
-            const hit = isBarcode
-              ? code === query.trim()
-              : name.toLowerCase().includes(needle);
-            if (!hit) continue;
-            const priceStr = it["ItemPrice"] ?? "";
-            const price = Number(priceStr);
-            if (!Number.isFinite(price) || price <= 0) continue;
-            filtered.push({
-              chainName: info.nameEn,
-              itemName: name,
-              itemCode: code,
-              price,
-              unitPrice: it["UnitOfMeasurePrice"],
-              manufacturer: it["ManufacturerName"],
-              updatedAt,
-            });
-          }
-
-          filtered.sort((a, b) => a.price - b.price);
-          return { chainKey, matches: filtered.slice(0, limit) };
+          out.sort((a, b) => a.price - b.price);
+          return { chainKey, matches: out.slice(0, limit) };
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { chainKey, matches: [], error: msg };
+          return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
         }
       }
 
-      const results = await Promise.all(targets.map(searchChain));
+      async function searchByBarcode(chainKey: string, barcode: string): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
+        try {
+          const r = await fetchChainItems(chainKey);
+          if ("error" in r) return { chainKey, matches: [], error: r.error };
+          const out: Match[] = [];
+          for (const it of r.items) {
+            if ((it["ItemCode"] ?? "") !== barcode) continue;
+            const m = itemToMatch(it, r.chainName, r.updatedAt);
+            if (m) out.push(m);
+          }
+          out.sort((a, b) => a.price - b.price);
+          return { chainKey, matches: out.slice(0, limit) };
+        } catch (err) {
+          return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+
+      // Main flow: barcode-pivot for name queries, direct barcode for numeric queries.
+      let results: { chainKey: string; matches: Match[]; error?: string }[] = [];
+      if (isBarcode) {
+        results = await Promise.all(targets.map((c) => searchByBarcode(c, query.trim())));
+      } else {
+        // Phase A: resolve barcode from Shufersal (best name completeness).
+        const pivotChain = targets.find((c) => c === "shufersal") ?? targets[0];
+        const pivot = await searchByName(pivotChain);
+        const pivotBarcode = pivot.matches[0]?.itemCode;
+
+        if (pivotBarcode) {
+          // Phase B: search remaining chains by barcode. If a chain has no exact-barcode
+          // hit, fall back to name search on the same (cached) item list so chains stocking
+          // a sibling SKU still contribute a price. Keep all pivot matches.
+          const others = targets.filter((c) => c !== pivotChain);
+          const byBarcode = await Promise.all(
+            others.map(async (c) => {
+              const r = await searchByBarcode(c, pivotBarcode);
+              if (r.matches.length > 0 || r.error) return r;
+              return searchByName(c);
+            })
+          );
+          results = [pivot, ...byBarcode];
+        } else {
+          // Fallback: name substring across all chains (legacy behavior).
+          results = await Promise.all(targets.map(searchByName));
+        }
+      }
 
       const allMatches = results.flatMap((r) => r.matches);
       allMatches.sort((a, b) => a.price - b.price);

@@ -84,7 +84,10 @@ export async function listFtpFiles(user: string): Promise<FtpFileEntry[]> {
         size: f.size,
         date: extractFileDate(f.name),
       }))
-      .sort((a, b) => b.name.localeCompare(a.name)); // newest filename first
+      // For per-store chains (Rami Levy etc.), the largest PriceFull file is the
+      // flagship store with the widest inventory — better coverage than alphabetical first.
+      // For chain-wide publishers (Shufersal, Osher Ad), size still picks the latest full snapshot.
+      .sort((a, b) => b.size - a.size);
   });
   const dt = Date.now() - start;
   console.error(`[ftp] chain=${user} op=list dt=${dt}ms entries=${entries.length}`);
