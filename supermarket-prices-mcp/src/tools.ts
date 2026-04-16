@@ -707,9 +707,6 @@ export function registerTools(server: McpServer): void {
       lines.push(
         "Community project: https://github.com/OpenIsraeliSupermarkets"
       );
-      lines.push(
-        "Kaggle dataset: https://www.kaggle.com/datasets/erlichsefi/israeli-supermarkets-2024"
-      );
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -1531,7 +1528,6 @@ export function registerTools(server: McpServer): void {
         "-".repeat(40),
         "  Web portals: Shufersal, PublishPrice-based chains",
         "  FTP: url.retail.publishedprices.co.il (most chains)",
-        "  Kaggle (aggregated): erlichsefi/israeli-supermarkets-2024",
         "  Python scraper: pip install il-supermarket-scarper",
       ];
 
