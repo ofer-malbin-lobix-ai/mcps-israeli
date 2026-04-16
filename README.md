@@ -18,7 +18,6 @@ Browse all MCPs at [agentskills.co.il/mcp](https://agentskills.co.il/he/mcp).
 | [israel-railways-mcp](./israel-railways-mcp) | Israel Railways train schedules, platforms, occupancy, and service updates | [rail.co.il](https://rail.co.il/) | None |
 | [openbus-mcp](./openbus-mcp) | Real-time Israeli public transit data (bus arrivals, route performance, vehicle locations) | [Open Bus Stride API](https://open-bus-stride-api.hasadna.org.il/docs) | None |
 | [supermarket-prices-mcp](./supermarket-prices-mcp) | Israeli supermarket price comparison using government-mandated price transparency data | [Price Transparency Law XML feeds](https://github.com/OpenIsraeliSupermarkets) | None |
-| [tase-mcp](./tase-mcp) | Tel Aviv Stock Exchange market data (securities, indices, Maya filings) | [TASE Data Hub](https://openapi.tase.co.il/tase/prod/) | API Key |
 | [tel-aviv-city-mcp](./tel-aviv-city-mcp) | Tel Aviv municipal data (parking, bike stations, road closures, city services) | [TLV ArcGIS REST](https://gisn.tel-aviv.gov.il/arcgis/rest/services/) | None |
 
 ## Structure
@@ -37,7 +36,6 @@ mcps/
   israel-railways-mcp/       # Israel Railways schedules
   openbus-mcp/               # Real-time bus transit data
   supermarket-prices-mcp/    # Supermarket price comparison
-  tase-mcp/                  # Tel Aviv Stock Exchange
   tel-aviv-city-mcp/         # Tel Aviv municipal data
 ```
 
