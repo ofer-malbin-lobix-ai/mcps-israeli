@@ -9,7 +9,6 @@ import {
   stripTags,
 } from "./client.js";
 import { listFtpFiles, fetchFtpXml } from "./ftp-client.js";
-import { lookupByBarcode as kaggleLookupByBarcode, lookupByName as kaggleLookupByName, lookupBySignature as kaggleLookupBySignature } from "./kaggle-mirror.js";
 import { productSignature, signaturesMatch, type ProductSignature } from "./product-signature.js";
 
 // ---------------------------------------------------------------------------
@@ -44,7 +43,7 @@ interface ChainInfo {
   id: string;
   nameHe: string;
   nameEn: string;
-  dataSource: "web" | "ftp" | "publishprice" | "kaggle";
+  dataSource: "web" | "ftp" | "publishprice";
   /** URL for web/publishprice sources, FTP username for ftp sources */
   endpoint: string;
   /** Whether this MCP can directly fetch price files from this chain */
@@ -537,12 +536,6 @@ export async function fetchChainItems(chainKey: string): Promise<ChainItemsResul
   const info = CHAINS[chainKey];
   if (!info) return { error: `unknown chain: ${chainKey}`, chainKey };
 
-  // Kaggle-backed chains don't have raw XML items; callers should use the
-  // kaggle lookup helpers directly instead of calling fetchChainItems.
-  if (info.dataSource === "kaggle") {
-    return { error: `${info.nameEn} is Kaggle-backed; use kaggle lookup helpers`, chainKey };
-  }
-
   let updatedAt = "unknown";
   let xml = "";
 
@@ -591,32 +584,7 @@ export function itemToMatch(it: Record<string, string>, chainName: string, updat
   };
 }
 
-export function kaggleToMatch(k: Awaited<ReturnType<typeof kaggleLookupByBarcode>>, chainName: string): Match | undefined {
-  if (!k) return undefined;
-  return {
-    chainName,
-    itemName: k.itemName,
-    itemCode: k.itemCode,
-    price: k.price,
-    unitPrice: k.unitPrice,
-    manufacturer: k.manufacturer,
-    updatedAt: k.updatedAt,
-  };
-}
-
 export async function searchByName(chainKey: string, needle: string, limit: number): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
-  const info = CHAINS[chainKey];
-  if (info?.dataSource === "kaggle") {
-    try {
-      const rows = await kaggleLookupByName(chainKey, needle, limit);
-      return {
-        chainKey,
-        matches: rows.map((r) => kaggleToMatch(r, info.nameEn)!).filter(Boolean),
-      };
-    } catch (err) {
-      return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-    }
-  }
   try {
     const r = await fetchChainItems(chainKey);
     if ("error" in r) return { chainKey, matches: [], error: r.error };
@@ -641,27 +609,6 @@ export async function searchByBarcode(
   limit: number,
   pivotSig?: ProductSignature | null
 ): Promise<{ chainKey: string; matches: Match[]; error?: string }> {
-  const info = CHAINS[chainKey];
-  if (info?.dataSource === "kaggle") {
-    try {
-      const k = await kaggleLookupByBarcode(chainKey, barcode);
-      if (k) {
-        const m = kaggleToMatch(k, info.nameEn);
-        return { chainKey, matches: m ? [m] : [] };
-      }
-      // Barcode miss → signature fallback scans the Kaggle snapshot.
-      if (pivotSig) {
-        const sigHits = await kaggleLookupBySignature(chainKey, pivotSig, limit);
-        return {
-          chainKey,
-          matches: sigHits.map((k) => kaggleToMatch(k, info.nameEn)!).filter(Boolean),
-        };
-      }
-      return { chainKey, matches: [] };
-    } catch (err) {
-      return { chainKey, matches: [], error: err instanceof Error ? err.message : String(err) };
-    }
-  }
   try {
     const r = await fetchChainItems(chainKey);
     if ("error" in r) return { chainKey, matches: [], error: r.error };
@@ -1824,31 +1771,7 @@ export function registerTools(server: McpServer): void {
         let matched = 0;
         let lastError: string | undefined;
 
-        if (info.dataSource === "kaggle") {
-          for (let i = 0; i < resolved.length; i++) {
-            const bc = resolved[i].barcode;
-            if (!bc) { missing.push(i); continue; }
-            try {
-              const k = await kaggleLookupByBarcode(chainKey, bc);
-              let m = kaggleToMatch(k, info.nameEn);
-              // Signature fallback when barcode isn't carried here.
-              if (!m && resolved[i].sig) {
-                const sigHits = await kaggleLookupBySignature(chainKey, resolved[i].sig!, 1);
-                m = sigHits.length > 0 ? kaggleToMatch(sigHits[0], info.nameEn) : undefined;
-              }
-              if (m) {
-                perItem[i] = m;
-                total += m.price * qtys[i];
-                matched++;
-              } else {
-                missing.push(i);
-              }
-            } catch (err) {
-              lastError = err instanceof Error ? err.message : String(err);
-              missing.push(i);
-            }
-          }
-        } else {
+        {
           const r = await fetchChainItems(chainKey);
           if ("error" in r) {
             return {
